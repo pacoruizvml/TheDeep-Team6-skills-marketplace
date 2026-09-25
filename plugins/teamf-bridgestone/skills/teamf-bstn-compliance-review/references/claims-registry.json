@@ -1,0 +1,554 @@
+{
+  "_meta": {
+    "name": "Bridgestone claims library + guardrail rules (Epic 3)",
+    "version": "0.4-draft",
+    "aligned_to": "Official agreed plan: Epic 3 stories 3.1-3.6; Compliance & Guardrails Agent checks Audience Rules, Claims, Offers, Business Rules",
+    "status": "SYNTHETIC / PLACEHOLDER. Not real Bridgestone substantiation, product or legal data. Confirm with the account team before presenting any of it as real.",
+    "market": "Germany",
+    "languages": [
+      "de-DE",
+      "en (review)"
+    ],
+    "how_the_agent_uses_it": [
+      "1. Claim extraction (story 3.4): detect claims in the copy using each claim's prohibited_wording + each rule's detect patterns; assign claim_type.",
+      "2. Check (stories 3.2, 3.3): for each detected claim, apply the rules for its claim_type. A claim needing evidence passes only if its evidence_id resolves to valid evidence.",
+      "3. Also check audience_rules, offer_rules and business_rules against the brief / audience / offer.",
+      "4. Return PASS, or VETO + constraints (see verdict_schema). Compliance NEVER writes replacement copy (story 3.5); the Campaign Agent rewrites using the constraints and allowed_wording.",
+      "5. Anything not covered by the library or rules = ESCALATE, never a silent pass."
+    ],
+    "coworker_mapping": "Each rule/claim lists its Coworker Brand guardrail (Experience Context > Bridgestone > Claim Guardrails). 'existing' = created by the team; 'to_create' = paste from 'Claim Guardrails - paste.md'. Guardrail IDs marked to_create are suggested slugs; replace with the IDs Coworker assigns. This registry is the master copy."
+  },
+  "claims_library": [
+    {
+      "claim_id": "CL-01",
+      "claim_type": "comparative_price",
+      "description": "Price comparison against a named or implied competitor",
+      "evidence_id": null,
+      "evidence_required": true,
+      "allowed_wording": [
+        {
+          "en": "Winter-ready tyres at a great price",
+          "de": "Wintertaugliche Reifen zu einem starken Preis"
+        },
+        {
+          "en": "Save 15% on winter tyre fitting with WINTER15 (valid until [date] at participating dealers)",
+          "de": "15 % Rabatt auf die Winterreifenmontage mit WINTER15 (gültig bis [Datum] bei teilnehmenden Händlern)"
+        }
+      ],
+      "prohibited_wording": [
+        {
+          "en": "Cheaper than Competitor X",
+          "de": "Günstiger als Wettbewerber X"
+        },
+        {
+          "en": "Lower prices than [brand]",
+          "de": "Niedrigere Preise als [Marke]"
+        },
+        {
+          "en": "Beat any competitor price",
+          "de": "Wir schlagen jeden Wettbewerberpreis"
+        }
+      ],
+      "demo_role": "DELIBERATE BAD CLAIM: 'Cheaper than Competitor X' is seeded into the non-compliant version (story 2.3) so the veto fires every run.",
+      "data_note": "Optional twist: Business Signal Events has currentPrice vs competitorPrice. In the storm scenario the competitor has CUT price, so the data would show the claim is not just unsubstantiated but likely false."
+    },
+    {
+      "claim_id": "CL-02",
+      "claim_type": "superiority",
+      "description": "Best / safest / number one / market-leading claims",
+      "evidence_id": null,
+      "evidence_required": true,
+      "allowed_wording": [
+        {
+          "en": "Engineered for winter traction",
+          "de": "Entwickelt für Traktion im Winter"
+        },
+        {
+          "en": "Designed for confident braking on ice and snow",
+          "de": "Entwickelt für sicheres Bremsen auf Eis und Schnee"
+        }
+      ],
+      "prohibited_wording": [
+        {
+          "en": "The best winter tyre",
+          "de": "Der beste Winterreifen"
+        },
+        {
+          "en": "The safest tyre on the market",
+          "de": "Der sicherste Reifen auf dem Markt"
+        },
+        {
+          "en": "Number 1 winter tyre",
+          "de": "Winterreifen Nr. 1"
+        }
+      ],
+      "demo_role": "Second veto example if time allows."
+    },
+    {
+      "claim_id": "CL-03",
+      "claim_type": "product_purpose",
+      "description": "What the product is designed for",
+      "evidence_id": "EV-01",
+      "evidence_required": true,
+      "allowed_wording": [
+        {
+          "en": "Designed for winter conditions",
+          "de": "Entwickelt für winterliche Bedingungen"
+        }
+      ],
+      "prohibited_wording": [],
+      "condition": "Only valid when the promoted product is a winter tyre (EV-01). On a summer tyre it fails.",
+      "coworker_guardrail": "claim_guardrail.claims.bridgestone-product-season-match",
+      "coworker_status": "to_create"
+    },
+    {
+      "claim_id": "CL-04",
+      "claim_type": "certification",
+      "description": "Snow certification (3PMSF symbol)",
+      "evidence_id": "EV-02",
+      "evidence_required": true,
+      "allowed_wording": [
+        {
+          "en": "Look for the snowflake symbol (3PMSF): certified for severe snow",
+          "de": "Achten Sie auf das Schneeflockensymbol (3PMSF): zertifiziert für schwere Schneebedingungen"
+        }
+      ],
+      "prohibited_wording": [],
+      "condition": "Only valid if the specific product has 3PMSF (EV-02).",
+      "coworker_guardrail": "claim_guardrail.claims.bridgestone-snow-certification-3pmsf",
+      "coworker_status": "to_create"
+    },
+    {
+      "claim_id": "CL-05",
+      "claim_type": "safety_outcome",
+      "description": "Accident, injury, life-saving or insurance outcomes",
+      "evidence_id": null,
+      "evidence_required": true,
+      "allowed_wording": [
+        {
+          "en": "Book a winter safety check",
+          "de": "Buchen Sie einen Winter-Sicherheitscheck"
+        }
+      ],
+      "prohibited_wording": [
+        {
+          "en": "Prevents accidents",
+          "de": "Verhindert Unfälle"
+        },
+        {
+          "en": "Could save your life",
+          "de": "Kann Leben retten"
+        },
+        {
+          "en": "Lower insurance costs",
+          "de": "Senkt Versicherungskosten"
+        }
+      ],
+      "action_if_detected": "ESCALATE (legal), not a simple veto",
+      "coworker_guardrail": "claim_guardrail.claims.bridgestone-safety-outcome-escalation",
+      "coworker_status": "to_create"
+    },
+    {
+      "claim_id": "CL-06",
+      "claim_type": "legal_information",
+      "description": "Germany's situational winter-tyre requirement, as general road-law information",
+      "evidence_id": "EV-04",
+      "evidence_required": true,
+      "allowed_wording": [
+        {
+          "en": "In Germany, winter tyres are required in wintry road conditions.",
+          "de": "In Deutschland gilt bei winterlichen Straßenverhältnissen die situative Winterreifenpflicht."
+        }
+      ],
+      "prohibited_wording": [
+        {
+          "en": "You will be fined if you don't buy our tyres",
+          "de": "Ohne unsere Reifen drohen Ihnen Bußgelder"
+        }
+      ],
+      "condition": "Only as general information, never tied to a specific brand. Wording to be confirmed by legal (PLACEHOLDER).",
+      "coworker_guardrail": "claim_guardrail.claims.bridgestone-winter-tyre-law-statements",
+      "coworker_status": "to_create"
+    }
+  ],
+  "rules": [
+    {
+      "rule_id": "R-COMP-01",
+      "story": "3.2",
+      "name": "comparative_claim_requires_evidence",
+      "applies_to_claim_types": [
+        "comparative_price",
+        "comparative_performance"
+      ],
+      "detect": [
+        "cheaper than",
+        "lower price than",
+        "than (the )?competitor",
+        "than [A-Z][a-z]+",
+        "günstiger als",
+        "billiger als",
+        "als (der )?Wettbewerb"
+      ],
+      "test": "evidence_id resolves AND evidence is current AND names the compared competitor",
+      "on_fail": "VETO",
+      "constraint": "No unsupported comparative claims. Remove the competitor comparison or cite dated, verifiable price evidence.",
+      "basis": "EU comparative advertising rules (Directive 2006/114/EC); German UWG §6. PLACEHOLDER: legal to confirm.",
+      "coworker_guardrail": "claim_guardrail.claims.bridgestone-claims-comparative",
+      "coworker_status": "existing"
+    },
+    {
+      "rule_id": "R-SUP-01",
+      "story": "3.3",
+      "name": "superiority_claim_requires_evidence",
+      "applies_to_claim_types": [
+        "superiority"
+      ],
+      "detect": [
+        "\\bbest\\b",
+        "safest",
+        "number 1",
+        "no\\. ?1",
+        "#1",
+        "market[- ]leading",
+        "\\bbeste[rsn]?\\b",
+        "sicherste[rsn]?",
+        "Nr\\. ?1",
+        "marktführend"
+      ],
+      "test": "evidence_id resolves to an independent test or award",
+      "on_fail": "VETO",
+      "constraint": "Superiority claims (best / safest / number 1) need cited independent evidence. Use descriptive wording instead.",
+      "coworker_guardrail": "claim_guardrail.claims.bridgestone-claims-superiority",
+      "coworker_status": "existing"
+    },
+    {
+      "rule_id": "R-NUM-01",
+      "name": "numeric_performance_requires_citation",
+      "applies_to_claim_types": [
+        "comparative_performance",
+        "superiority"
+      ],
+      "detect": [
+        "\\d+ ?% (shorter|better|more|kürzer|besser|mehr)",
+        "\\d+ ?(m|metres|meters|Meter)\\b"
+      ],
+      "test": "evidence_id resolves to a test with conditions stated",
+      "on_fail": "VETO",
+      "constraint": "Numeric performance figures need a cited test (who, when, conditions, tyre size).",
+      "coworker_guardrail": "claim_guardrail.claims.bridgestone-performance-claims-footnotes",
+      "coworker_status": "existing"
+    },
+    {
+      "rule_id": "R-SAFE-01",
+      "name": "safety_outcome_escalates",
+      "applies_to_claim_types": [
+        "safety_outcome"
+      ],
+      "detect": [
+        "accident",
+        "Unfall",
+        "Unfälle",
+        "injur",
+        "save (your )?li(fe|ves)",
+        "Leben retten",
+        "insurance",
+        "Versicherung"
+      ],
+      "on_fail": "ESCALATE",
+      "constraint": "Safety outcome claims must be reviewed by legal.",
+      "coworker_guardrail": "claim_guardrail.claims.bridgestone-safety-outcome-escalation",
+      "coworker_status": "to_create"
+    },
+    {
+      "rule_id": "R-UNLISTED-01",
+      "name": "unknown_claim_escalates",
+      "applies_to_claim_types": [
+        "*"
+      ],
+      "test": "claim not matched by any claims_library entry or rule",
+      "on_fail": "ESCALATE",
+      "constraint": "Unrecognised claim: route to a human reviewer.",
+      "coworker_guardrail": "claim_guardrail.claims.bridgestone-unrecognised-requested-claims",
+      "coworker_status": "to_create"
+    },
+    {
+      "rule_id": "R-SAFE-02",
+      "name": "no_guaranteed_safety",
+      "applies_to_claim_types": [
+        "safety_outcome",
+        "superiority"
+      ],
+      "detect": [
+        "accident[- ]proof",
+        "risk[- ]free",
+        "guarantee[sd]? safety",
+        "eliminates danger",
+        "unfallsicher",
+        "risikofrei",
+        "garantiert sicher"
+      ],
+      "on_fail": "VETO",
+      "constraint": "No claims implying guaranteed safety. Use e.g. 'Designed for winter driving conditions', 'Supports confident driving', 'Engineered for enhanced traction'.",
+      "coworker_guardrail": "claim_guardrail.claims.bridgestone-claims-safety",
+      "coworker_status": "existing"
+    },
+    {
+      "rule_id": "R-TAG-01",
+      "name": "approved_tagline_only",
+      "applies_to_claim_types": [
+        "*"
+      ],
+      "detect": [
+        "Your Journey, Our Passion"
+      ],
+      "on_fail": "VETO",
+      "constraint": "Use only the approved tagline 'Solutions for your journey'. 'Your Journey, Our Passion' is outdated.",
+      "coworker_guardrail": "claim_guardrail.claims.bridgestone-claims-tagline-usage",
+      "coworker_status": "existing"
+    },
+    {
+      "rule_id": "R-TM-01",
+      "name": "trademark_on_first_mention",
+      "applies_to_claim_types": [
+        "*"
+      ],
+      "test": "Bridgestone / Firestone product names (e.g. Potenza, Turanza, Ecopia, Blizzak) carry ® on first mention in each language version",
+      "on_fail": "VETO",
+      "constraint": "Add ® to the product name on first mention (e.g. Blizzak®).",
+      "coworker_guardrail": "claim_guardrail.claims.bridgestone-claims-trademark-usage",
+      "coworker_status": "existing"
+    }
+  ],
+  "offer_rules": [
+    {
+      "rule_id": "O-TERMS-01",
+      "name": "offer_terms_stated",
+      "detect": [
+        "\\d+ ?% (off|Rabatt)",
+        "discount",
+        "Rabatt",
+        "WINTER15"
+      ],
+      "test": "copy states validity date AND participating dealers",
+      "on_fail": "VETO",
+      "constraint": "Offers must state the validity date and 'at participating dealers'."
+    },
+    {
+      "rule_id": "O-MAX-01",
+      "name": "max_discount",
+      "test": "discount_percent <= 15",
+      "on_fail": "VETO",
+      "constraint": "Maximum discount for reactive campaigns is 15% (PLACEHOLDER business limit)."
+    }
+  ],
+  "audience_rules": [
+    {
+      "rule_id": "A-CONSENT-01",
+      "name": "email_consent_required",
+      "test": "audience definition requires marketingConsent = true AND emailOptIn = true (email channel)",
+      "on_fail": "VETO",
+      "constraint": "Email audiences must be consent-gated: marketingConsent AND emailOptIn."
+    },
+    {
+      "rule_id": "A-PUSH-01",
+      "name": "push_consent_required",
+      "test": "if channel = push: marketingConsent = true AND pushOptIn = true",
+      "on_fail": "VETO",
+      "constraint": "Push audiences need marketingConsent AND pushOptIn."
+    },
+    {
+      "rule_id": "A-MARKET-01",
+      "name": "market_scope",
+      "test": "all profiles in the audience have country = 'Germany' (Demo 1 scope)",
+      "on_fail": "VETO",
+      "constraint": "Audience must be limited to the campaign market (Germany)."
+    }
+  ],
+  "business_rules": [
+    {
+      "rule_id": "B-LANG-01",
+      "name": "market_language",
+      "test": "Germany copy is in German (de-DE); English translation attached for review",
+      "on_fail": "VETO",
+      "constraint": "German market copy must be in German."
+    },
+    {
+      "rule_id": "B-PRODUCT-01",
+      "name": "season_matches_product",
+      "test": "winter / snow claims only for products with tyreSeason Winter or All-Season (EV-01)",
+      "on_fail": "VETO",
+      "constraint": "Winter claims only for winter or all-season products."
+    }
+  ],
+  "arbitration_protocol": {
+    "story": "3.5 / 3.6",
+    "max_rounds": 3,
+    "compliance_returns": "PASS, or VETO + constraints. Never replacement copy.",
+    "campaign_agent_on_veto": "Rewrites using the constraints and the claims_library allowed_wording, then resubmits (story 2.4)",
+    "each_round_logged": "Governance logs every round separately (story 4.4)",
+    "on_round_3_fail": "ESCALATE: 'Escalated to Human' with all constraints and round history attached (story 3.6)",
+    "on_escalate_rule": "Safety-outcome or unlisted claims escalate immediately, without using up rounds"
+  },
+  "verdict_schema": {
+    "round": "1 | 2 | 3",
+    "copy_version": "int",
+    "decision": "PASS | VETO | ESCALATE",
+    "constraints": [
+      {
+        "constraint_id": "string",
+        "claim_id": "CL-xx or UNLISTED",
+        "claim_text_found": "exact text from the copy",
+        "rule_id": "R-/O-/A-/B- id",
+        "reason": "why it failed",
+        "constraint": "what the rewrite must satisfy",
+        "evidence_required": "evidence type needed to allow the original claim, or null"
+      }
+    ],
+    "no_rewrite_field": "Intentionally absent. Compliance does not write copy."
+  },
+  "evidence": [
+    {
+      "evidence_id": "EV-01",
+      "type": "product_data",
+      "description": "Product season attribute (tyreSeason / recommendedSeason, Vehicle & Tyre Data - v2)",
+      "source": "AEP dataset field"
+    },
+    {
+      "evidence_id": "EV-02",
+      "type": "certification",
+      "description": "3PMSF certification per product",
+      "source": "PLACEHOLDER: needs a real product certification list"
+    },
+    {
+      "evidence_id": "EV-03",
+      "type": "price_check",
+      "description": "Dated competitor price comparison, same product and market",
+      "source": "Business Signal Events (currentPrice vs competitorPrice). In the storm scenario this shows the competitor is CHEAPER, so CL-01 cannot be substantiated"
+    },
+    {
+      "evidence_id": "EV-04",
+      "type": "legal_reference",
+      "description": "German road traffic regulation on winter tyres in wintry conditions (StVO §2(3a))",
+      "source": "PLACEHOLDER: legal to confirm current wording, incl. 3PMSF requirement"
+    }
+  ],
+  "products": [
+    {
+      "product": "Blizzak",
+      "brand": "Bridgestone",
+      "tyreSeason": "Winter",
+      "has3PMSF": true,
+      "_note": "PLACEHOLDER flag"
+    },
+    {
+      "product": "Winterhawk",
+      "brand": "Firestone",
+      "tyreSeason": "Winter",
+      "has3PMSF": true,
+      "_note": "PLACEHOLDER flag"
+    },
+    {
+      "product": "Weather Control",
+      "brand": "Bridgestone",
+      "tyreSeason": "All-Season",
+      "has3PMSF": true,
+      "_note": "PLACEHOLDER flag"
+    },
+    {
+      "product": "Multiseason",
+      "brand": "Firestone",
+      "tyreSeason": "All-Season",
+      "has3PMSF": false,
+      "_note": "PLACEHOLDER flag"
+    },
+    {
+      "product": "Turanza",
+      "brand": "Bridgestone",
+      "tyreSeason": "Summer",
+      "has3PMSF": false,
+      "_note": "PLACEHOLDER flag"
+    }
+  ],
+  "test_cases": [
+    {
+      "id": "T1",
+      "round": 1,
+      "product": "Blizzak",
+      "copy_de": "Blizzak Winterreifen – günstiger als Wettbewerber X. Jetzt 15 % Rabatt mit WINTER15.",
+      "copy_en": "Blizzak winter tyres: cheaper than Competitor X. 15% off now with WINTER15.",
+      "expected": "VETO",
+      "expected_constraints": [
+        "R-COMP-01 (CL-01 no evidence; EV-03 shows competitor is cheaper)",
+        "O-TERMS-01 (no validity date / participating dealers)"
+      ],
+      "why": "The seeded non-compliant version (story 2.3)"
+    },
+    {
+      "id": "T2",
+      "round": 2,
+      "product": "Blizzak",
+      "copy_de": "Blizzak – entwickelt für Traktion im Winter. 15 % Rabatt auf die Winterreifenmontage mit WINTER15 (gültig bis 30.11. bei teilnehmenden Händlern).",
+      "copy_en": "Blizzak: engineered for winter traction. 15% off winter tyre fitting with WINTER15 (valid until 30 Nov at participating dealers).",
+      "expected": "PASS",
+      "why": "Campaign Agent rewrite using allowed_wording; terms stated"
+    },
+    {
+      "id": "T3",
+      "product": "Blizzak",
+      "copy_en": "The safest winter tyre on the market.",
+      "expected": "VETO",
+      "expected_constraints": [
+        "R-SUP-01"
+      ],
+      "why": "Superiority claim without evidence (story 3.3)"
+    },
+    {
+      "id": "T4",
+      "product": "Turanza",
+      "copy_en": "Turanza: designed for winter conditions.",
+      "expected": "VETO",
+      "expected_constraints": [
+        "B-PRODUCT-01"
+      ],
+      "why": "Winter claim on a summer tyre"
+    },
+    {
+      "id": "T5",
+      "product": "Blizzak",
+      "copy_en": "Winter tyres that could save your life.",
+      "expected": "ESCALATE",
+      "expected_constraints": [
+        "R-SAFE-01"
+      ],
+      "why": "Safety outcome goes to legal immediately"
+    },
+    {
+      "id": "T6",
+      "product": "Blizzak",
+      "audience": "postalCode in storm zips AND replacementDue = true (no consent filter)",
+      "expected": "VETO",
+      "expected_constraints": [
+        "A-CONSENT-01"
+      ],
+      "why": "Audience not consent-gated"
+    },
+    {
+      "id": "T7",
+      "product": "Blizzak",
+      "copy_en": "Blizzak: cheaper than Competitor X (rounds 1-3 all keep the comparison)",
+      "expected": "ESCALATE",
+      "why": "Round 3 still fails, so escalated to human (story 3.6)"
+    },
+    {
+      "id": "T8",
+      "product": "Blizzak",
+      "copy_en": "Blizzak: 40% off this week only.",
+      "expected": "VETO",
+      "expected_constraints": [
+        "O-MAX-01",
+        "O-TERMS-01"
+      ],
+      "why": "Over max discount; terms missing"
+    }
+  ]
+}
