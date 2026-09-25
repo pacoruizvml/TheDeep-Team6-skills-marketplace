@@ -6,9 +6,9 @@ There are four independent **MCP servers**, one per agent. Each has its own rest
 
 | Agent | Endpoint | Can do | Cannot do |
 |---|---|---|---|
-| 1 · Signal-to-Audience | `/signal/mcp` | weather + business signals, opportunity check, Replace vs Swap data, build/size audience, notify dealer, dealer reply | write copy, judge compliance, approve |
+| 1 · Signal-to-Audience | `/signal/mcp` | **`get_external_signals`** (weather + competitor pricing trigger feeds), weather + business signals, opportunity check, Replace vs Swap data, build/size audience, notify dealer, dealer reply | write copy, judge compliance, approve |
 | 2 · Campaign | `/campaign/mcp` | brief inputs, brand voice, read claims library, submit drafts/revisions, read veto feedback | judge compliance, approve, stage |
-| 3 · Compliance & Guardrails (veto) | `/compliance/mcp` | ruleset, audience guardrails, offer guardrails, claim evaluation → PASS / VETO + constraints / ESCALATE | write or edit copy, approve, stage |
+| 3 · Compliance & Guardrails (veto) | `/compliance/mcp` | **`submit_campaign_for_review`** (scripted: 1st VETO, 2nd PASS), ruleset, audience guardrails, offer guardrails, claim evaluation → PASS / VETO + constraints / ESCALATE | write or edit copy, approve, stage |
 | 4 · Governance & Approval | `/governance/mcp` | Workfront record (simulated), audit trail, approval request, human decision, stage AJO journey (simulated, never activated) | write copy, judge compliance |
 
 Human-facing pages (same port):
@@ -43,6 +43,21 @@ npm run reset      # clear runtime state before a fresh demo run
 8. Human approval on the review page.
 9. The journey is **STAGED (not activated)**.
 10. The escalation path: 3 non-compliant rounds lead to **ESCALATE**.
+
+## Coworker-driven flow (scripted veto → approval)
+
+This is the fastest demo path. Coworker generates the audience reasoning and the campaign text itself.
+
+1. **Signal-to-Audience → `get_external_signals`** returns the trigger feeds from `src/fixtures/external-signals.json`: 5 WeatherGridAPI records and 3 Competitor Price Monitor alerts. The file is re-read on every call, so you can edit it without restarting. To point at another file, set `EXTERNAL_SIGNALS_FILE`.
+2. Coworker decides the opportunity: Munich 80331 has snow, icy roads and severity High, and Competitor X has a winter promotion. Coworker then writes the campaign text. Optionally, `build_audience(market="DE", postalPrefixes=["80"], ...)` gives a sized audience.
+3. **Compliance → `submit_campaign_for_review`** takes the subject, headline, body, CTA and language:
+   - **First submission → VETO**, with violations and constraints. If the rule engine finds real issues in the text (for example "günstiger als Competitor X"), those are quoted. Otherwise a scripted comparative-price/qualifier veto is returned. No replacement copy is ever given.
+   - **Second submission** (same `reviewId`) → **PASS**, with any matched claims-library evidence.
+   - If Coworker forgets the `reviewId`, the revision is attached to the open vetoed review.
+   - Every verdict is logged with `decisionMode: SCRIPTED_DEMO` in the audit trail.
+4. **Governance → `create_workfront_record(campaignId=<reviewId>)` → `request_human_approval`**. The human approves on `/review/<recordId>`. Then `stage_ajo_journey` runs.
+
+Run `npm run reset` before each demo so the first submission is vetoed again.
 
 ## 2. Which exposure option? → **Multiplexing (one port)** ✅
 

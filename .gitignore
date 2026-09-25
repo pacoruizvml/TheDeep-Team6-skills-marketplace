@@ -3,6 +3,8 @@ __MACOSX/
 *.zip
 Thumbs.db
 
-# Node / simulator
+# bridgestone-mcp-sim
 node_modules/
-bridgestone-mcp-sim/runtime/
+runtime/
+data-export/
+.env
