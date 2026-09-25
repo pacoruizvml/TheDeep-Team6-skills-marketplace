@@ -2,3 +2,7 @@
 __MACOSX/
 *.zip
 Thumbs.db
+
+# Node / simulator
+node_modules/
+bridgestone-mcp-sim/runtime/

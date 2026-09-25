@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin.json",
+  "name": "teamf-bridgestone",
+  "displayName": "Team F · Bridgestone reactive campaigns",
+  "version": "1.0.0",
+  "description": "Team F (The Deep, Team 6) skills for the Bridgestone reactive-campaign flow in CX Enterprise Coworker. Uses Coworker's Adobe MCP tools; no bundled MCP server. Synthetic data only.",
+  "author": {
+    "name": "The Deep · Team 6 (Team F)"
+  },
+  "keywords": [
+    "aep",
+    "ajo",
+    "cja",
+    "workfront",
+    "coworker",
+    "bridgestone",
+    "teamf",
+    "the-deep"
+  ],
+  "skills": "./skills/"
+}

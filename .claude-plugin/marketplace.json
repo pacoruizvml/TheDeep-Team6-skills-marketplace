@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "teamf",
+  "owner": {
+    "name": "The Deep · Team 6 (Team F)"
+  },
+  "description": "Team F skills for The Deep hackathon (WPP x Adobe 2026): Bridgestone reactive-campaign flow for CX Enterprise Coworker.",
+  "plugins": [
+    {
+      "name": "teamf-bridgestone",
+      "source": "./plugins/teamf-bridgestone",
+      "description": "Reactive winter-storm campaign flow for Bridgestone: trigger detection, audience selection, brief, draft, agent-to-agent compliance, Workfront approval gate. Synthetic data only."
+    }
+  ]
+}

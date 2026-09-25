@@ -1,13 +1,17 @@
 ---
 name: teamf-core-decision-trail
-description: >
-  [Team F · core · v1] Governance for Bridgestone reactive campaigns. Writes every signal, agent flag, recommendation, arbitration turn
-  and human decision as a structured, auditable record in Workfront, and runs the human approval gate before
-  go-live: opens an approval task for a named approver, reads back Approve / Amend / Reject, and answers
-  "is release authorised?" for the release step. Falls back to a local decision log if Workfront is unavailable.
-  Use when any step needs to "log", "record", "audit", "request approval", "check approval" or "can we release",
-  or to run the Workfront smoke test. Never approves on a human's behalf and never releases anything itself.
-  Team F skill: use only when the request names Team F or a teamf- skill, or when called by another teamf- skill.
+description: "[Team F \xB7 core \xB7 v2] Governance for Bridgestone reactive campaigns.\
+  \ Writes every signal, agent flag, recommendation, arbitration turn and human decision\
+  \ as a structured, auditable record in Workfront, and runs the human approval gate\
+  \ before go-live: opens an approval task for a named approver, reads back Approve\
+  \ / Amend / Reject, and answers \"is release authorised?\" for the release step.\
+  \ Falls back to a local decision log if Workfront is unavailable. Use when any step\
+  \ needs to \"log\", \"record\", \"audit\", \"request approval\", \"check approval\"\
+  \ or \"can we release\", or to run the Workfront smoke test. Never approves on a\
+  \ human's behalf and never releases anything itself. Team F skill: use only when\
+  \ the request names Team F or a teamf- skill, or when called by another teamf- skill."
+metadata:
+  author: user
 ---
 
 # Workfront decision trail
@@ -73,8 +77,9 @@ note the duplicate.
 
 ### OPEN_GATE: request human approval
 Called when the campaign has converged / passed compliance. Create the **approval-gate task**:
-- **Assignee:** the configured campaign approver (role or person from Business Context, or given by the user).
-  **If none is configured, ask. Never guess and never leave it unassigned.**
+- **Assignee:** the configured campaign approver. **Default approver: Stefanie Culley (stefanie.culley@vml.com)**
+  unless the user names someone else in this conversation. Resolve her by display name "Stefanie Culley" to her
+  human Workfront user (not a tech account).
 - **Due:** within 2 hours (reactive target), unless told otherwise.
 - **Description = approval package:**
   - Campaign: market, storm zone(s), audience name + profile count + segments, channel, send deadline
@@ -83,11 +88,34 @@ Called when the campaign has converged / passed compliance. Create the **approva
   - Evidence used, trigger_id, brief_id, final copy version, link to the decision-trail task
   - **Decision requested: Approve / Amend / Reject** (Amend = comments on what to change)
 - **Status:** awaiting approval.
+- **Due date:** set `plannedCompletionDate` explicitly to now + 2 hours (don't leave Workfront's default dates).
 
-Log `APPROVAL_REQUESTED` with the task link and assignee. Report: *"Approval requested from <assignee>, due <time>: <link>."*
+**Attach a real Workfront approval (required).** A plain assigned task has no Approve / Reject buttons and records
+no formal decision, so the gate must carry a Workfront approval:
+1. Resolve the approver to their Workfront **user ID** by name / email (a human user, never a tech or service
+   account; if the lookup returns a non-human account, search by display name instead).
+2. **Preferred: task approval process.** Find a single-step approval process for tasks in Workfront
+   (e.g. "TeamF Campaign Release Approval") and set it on the gate task (`approvalProcessID`), with the approver
+   as the step's approver. Never create or change approval processes yourself; if none exists, say so and use option 3.
+3. **Alternative: document approval.** If the approval package can be attached to the gate task as a Workfront
+   document (PDF of the package), create a one-stage document approval on that document version with the approver
+   as `approver` (stage name: `Release approval v<version>`). Before creating it, ask whether to add a custom message.
+4. **Fallback only** (neither 2 nor 3 is possible): keep the task, tell the user plainly that no formal Workfront
+   approval is attached, and that the decision will be read from a comment on the task ("Approve" / "Amend: …" /
+   "Reject") by the named approver. Log this in `details.approval_mechanism`.
+
+Record `details.approval_mechanism` = `task_approval_process | document_approval | comment_fallback` and the
+approval / document IDs in the `APPROVAL_REQUESTED` record.
+
+**Self-approval check.** If the approver is the same person who started the flow, note it in the approval package
+and in `details.self_approval: true`. For the default approver (Stefanie Culley) this is an accepted demo
+exception: proceed without asking. For anyone else, ask for a different approver or explicit confirmation first.
+
+Log `APPROVAL_REQUESTED` with the task link, assignee and approval mechanism. Report: *"Approval requested from
+<assignee>, due <time>, via <mechanism>: <link>."*
 
 **Approval policy `pre-approved-dealer-envelope`** (from `teamf-bstn-dealer-activation`, mode B): every element of the
-promo (audience, offer within ceiling, brand-check-cleared wording, own area) was pre-cleared by marketing, so the
+promo (audience, offer within ceiling, registry-cleared wording, own area) was pre-cleared by marketing, so the
 **dealer's explicit confirmation counts as the approval**. Create the gate task assigned to the dealer contact
 (or record the confirmation if it was given in the conversation), and log `HUMAN_DECISION` with actor = dealer and
 `"policy": "pre-approved-dealer-envelope"`. This policy **never** applies to the main reactive-campaign flow or to
@@ -95,7 +123,9 @@ anything with a substitution the dealer didn't confirm.
 
 ### CHECK_GATE: is release authorised?
 Called by the release step **before anything is activated or sent**. Read the approval-gate task for the
-**current** campaign version:
+**current** campaign version. Read the decision from the Workfront approval recorded in
+`details.approval_mechanism` (task approval status, or document approval info); only for `comment_fallback`
+read the approver's comment. A decision by anyone other than the named approver doesn't count.
 
 | Approver's decision | Gate | Log | Tell the caller |
 |---|---|---|---|
@@ -154,7 +184,7 @@ After each record, also print one plain line for the on-screen trail:
 - **Never approve on anyone's behalf, never mark a gate APPROVED yourself, never release or activate.**
 - Never edit or delete existing records. Mistakes are corrected with a new record that references the old one.
   (Only exception: the smoke-test task you created.)
-- Never guess approvers, projects or task IDs.
+- Never guess projects or task IDs. The approver is the default (Stefanie Culley) or the person the user names.
 - Log agent decisions **and** human decisions, including exclusions and reasons, not only outcomes.
 - Keep dealer requests and blocked claims verbatim in the records. Don't clean up the history.
 
@@ -165,7 +195,7 @@ Trigger T-DE-20095-20261203 (Hamburg, Firestone Winterhawk):
 2. LOG `TRIGGER_DECISION` (002), `AUDIENCE_SELECTED` (003), `BRIEF_CREATED` (004), `CAMPAIGN_DRAFTED` (005).
 3. LOG `ARBITRATION_TURN` round 1 VETO (006), round 2 ACCEPT (007), `COMPLIANCE_VERDICT` PASS (008).
 4. OPEN_GATE → task "Approve release: Hamburg Winter Storm - Firestone Winterhawk (T-DE-20095-20261203, v2)",
-   assigned to the Campaign Approver, due in 2 h. LOG `APPROVAL_REQUESTED` (009).
+   assigned to the Campaign Approver, due in 2 h, with a Workfront approval attached. LOG `APPROVAL_REQUESTED` (009).
 5. CHECK_GATE (before release) → approver chose Approve on v2 → `HUMAN_DECISION` (010), `RELEASE_AUTHORISED` (011).
 6. CLOSE → 2 rounds, 0 human interventions in arbitration, 1 human approval.
 
@@ -179,6 +209,9 @@ Trigger T-DE-20095-20261203 (Hamburg, Firestone Winterhawk):
 | T4 | CHECK_GATE before any decision | OPEN → RELEASE_BLOCKED |
 | T5 | Copy changed after approval | Version mismatch → INVALID → new gate required |
 | T6 | Workfront unavailable | Fallback log block; approval requested in chat; only a named approver's explicit Approve counts |
-| T7 | No approver configured | Ask; no unassigned task created |
+| T7 | No approver named by the user | Default approver Stefanie Culley assigned; never unassigned |
 | T8 | Project not found | Ask which project; never create one |
 | T9 | SMOKE_TEST | Test task created, read back, deleted; nothing else touched |
+| T10 | OPEN_GATE with an approver | Gate task has a formal Workfront approval (task approval process or document approval) with Approve / Reject available to the approver; due now + 2h |
+| T11 | No approval process or document possible | Comment fallback used and stated plainly to the user; mechanism logged |
+| T12 | Approver = flow requester | Default approver (Stefanie Culley): proceed, flagged `self_approval: true`. Other person: ask first |

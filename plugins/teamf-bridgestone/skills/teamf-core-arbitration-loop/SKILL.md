@@ -17,6 +17,17 @@ You are the **referee** of a negotiation between two agents. You don't write the
 it. You enforce the protocol: who speaks next, what each turn must contain, how many rounds are allowed, when
 the negotiation has converged, and when it must go to a human. Every turn is recorded.
 
+## Entry check (run before anything else)
+
+Check every item. If any fails, **stop**: start no turn. Reply `ENTRY CHECK FAILED: teamf-core-arbitration-loop`
+and list each failed item with what's needed. If all pass, print one line `Entry check passed` and continue.
+
+1. **Proposer and arbiter** skills are available by exact name (defaults: `teamf-bstn-campaign-draft` and
+   `teamf-bstn-compliance-review`).
+2. **Subject** exists: the proposal to negotiate (e.g. campaign draft v1) is in this conversation.
+3. **Config** is complete: `negotiation_id`, `max_rounds`, `on_converged` and `on_escalated` are set (from the
+   caller or the defaults below).
+
 ## Setup
 
 Before the first turn, establish the **negotiation config** (from the user, the calling skill, or these defaults):

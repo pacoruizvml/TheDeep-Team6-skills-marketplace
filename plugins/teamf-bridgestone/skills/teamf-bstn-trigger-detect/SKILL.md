@@ -1,11 +1,13 @@
 ---
 name: teamf-bstn-trigger-detect
 description: >
-  [Team F · Bridgestone Demo 1 · v1] Detects a Bridgestone reactive-campaign opportunity from two incoming signal feeds (a weather feed and a
-  competitor pricing feed), applies the storm and competitor-undercut thresholds, and emits a structured
-  trigger object (affected postal codes, season, products under pressure), selects the best EXISTING audience
-  in AEP (configurable scoring, with a geo filter when the audience is broader), and hands off to campaign creation. Use when a user pastes or sends weather + competitor pricing feed
-  JSON, or asks "is there an opportunity", "check the signals", "detect the trigger", or starts the winter
+  [Team F · Bridgestone Demo 1 · v2] Fetches the weather and competitor pricing feeds by calling the Team F
+  Signal-to-Audience MCP tool `get_external_signals` (/signal/mcp), applies the storm and competitor-undercut
+  thresholds, emits a structured trigger object (affected postal codes, season, products under pressure), selects
+  the best EXISTING audience in AEP (configurable scoring, with a geo filter when the audience is broader), and
+  returns that audience's name and ID for the next step. Use when a user asks "is there an opportunity",
+  "check the signals", "detect the trigger", "get the external signals", pastes weather + competitor pricing feed
+  JSON, or starts the winter
   readiness / storm campaign flow. Does NOT create or edit audiences, write campaign content, judge claims,
   or publish anything.
   Team F skill: use only when the request names Team F or a teamf- skill, or when called by another teamf- skill.
@@ -14,15 +16,47 @@ description: >
 # Bridgestone reactive trigger detect
 
 You are the first step of the Bridgestone reactive-campaign flow. Your job is to:
-1. read the incoming signals and decide **whether there is an opportunity**,
-2. **select the audience**: score the **existing** AEP audiences against the trigger and pick the best one (never create one),
-3. **trigger campaign creation** by handing the trigger object to the campaign step.
+1. **fetch the signals** by calling `get_external_signals`,
+2. read them and decide **whether there is an opportunity**,
+3. **select the audience**: score the **existing** AEP audiences against the trigger and pick the best one (never create one),
+4. **return the audience name and ID**, and hand the trigger object to the campaign step.
 
 You don't create or change audiences, write campaign content, judge claims, or publish or activate anything.
 
+## Entry check (run before anything else)
+
+Check every item. If any fails, **stop**: produce no trigger object and select no audience. Reply `ENTRY CHECK
+FAILED: teamf-bstn-trigger-detect` and list each failed item with what's needed. If all pass, print one line
+`Entry check passed` and continue.
+
+1. **A signal source exists:** either both feeds are already in this conversation (pasted, or fetched by
+   `teamf-bstn-orchestrator`), or the Signal-to-Audience tool `get_external_signals` is available.
+2. **After Step 0, the feeds are usable:** `weather_feed.records[]` and `competitor_pricing_feed.records[]` are
+   both present and non-empty, and each record has the fields the rules use (`snowProbability`, `validFrom` /
+   `validUntil`, `postalCode`, `city`, `country`; `new_price_eur`, `bridgestone_price_eur`, `market`, `regions`,
+   `category`, `valid_from` / `valid_until`). A missing field in one record is excluded with the reason and
+   noted; it's not an entry failure.
+3. **An audience source is available** for part 3: the live Segmentation API or an audience tool that reads it.
+   If only a cached source is available, this is not a failure: continue and note it (see 3b).
+
+## Step 0 · Fetch the signals (always first)
+
+Call the tool **`get_external_signals`** with `feed: "all"` on the **Team F Signal-to-Audience** connector
+(endpoint `/signal/mcp`). It returns `weather_feed` and `competitor_pricing_feed` in one response. Use that
+response as the input below.
+
+- Call it once per run, before anything else. Don't ask the user to paste the feeds first.
+- If the tool errors or the connector isn't available, report the exact error and stop. Don't invent or reuse
+  signal values from earlier in the conversation. Offer the user the option to paste the feed JSON instead.
+- If the feeds are already in this conversation (pasted by the user, or fetched by `teamf-bstn-orchestrator` in
+  its step 1), use those and skip the call.
+- Use only `get_external_signals` from that connector for this skill. Don't call `get_weather_alerts`,
+  `get_business_signals` or `evaluate_opportunity` (they read a different dataset), and never call
+  `build_audience` (it creates an audience).
+
 ## Input
 
-The user pastes (or a caller sends) one JSON document containing two feeds:
+`get_external_signals` returns (or the user pastes) one JSON document containing two feeds:
 
 - `weather_feed.records[]`: weather events (External Context Events fields): `city`, `postalCode`, `country`,
   `snowProbability` (0–100), `snowAmount` (cm), `temperature` (°C), `roadCondition`, `severity`,
@@ -222,9 +256,26 @@ If `NO_TRIGGER`: keep the same shape, with empty `storm_zones` or `competitor_pr
 
 ## Hand-off
 
-If `TRIGGERED` and an audience was selected (auto, pinned, or picked by a human), finish with: *"Trigger ready. Handing off to campaign creation: trigger
-`<trigger_id>`, audience `<audience name>` (<profile_count> profiles<, geo filter: postcodes if applied>), products `<products_under_pressure>`,
-season Winter."* The campaign step (Campaign Agent / brief skill) takes the full trigger object as its input.
+If `TRIGGERED` and an audience was selected (auto, pinned, or picked by a human), end your reply with the
+**selected audience** block. It's what the next steps read, so always include it, exactly this shape, with the
+real AEP audience `id` and `name` copied from the Segmentation API (never shortened or paraphrased):
+
+```json
+{
+  "selected_audience": {
+    "trigger_id": "<trigger_id>",
+    "audience_id": "<AEP audience id>",
+    "audience_name": "<AEP audience name>",
+    "profile_count": 0,
+    "geo_filter_postal_codes": []
+  }
+}
+```
+
+Then finish with: *"Trigger ready. Handing off to campaign creation: trigger `<trigger_id>`, audience
+`<audience name>` (ID `<audience id>`, <profile_count> profiles<, geo filter: postcodes if applied>), products
+`<products_under_pressure>`, season Winter."* The campaign step (Campaign Agent / brief skill) takes the full
+trigger object and the selected audience block as its input.
 
 If `TRIGGERED` but the selection is `human_required` or `none`, don't hand off yet. Report the shortlist or gap (see part 3).
 
@@ -272,8 +323,10 @@ Result:
   - "Hamburg Tyre Owners" (postcode 20095, no season rule, no consent rule, draft): need 15 + geo 30 + consent 0 + freshness 0 = **45**
   - "Berlin Winter Push" (postcode 10115): **not eligible** (geo disjoint)
   → auto-select "Winter Readiness DE – Email" (85 ≥ 70, lead 40 ≥ 10) with `geo_filter` = ["20095"].
+- Selected audience block: `trigger_id` "T-DE-20095-20261203", `audience_id` "<id from the Segmentation API>",
+  `audience_name` "Winter Readiness DE – Email", `geo_filter_postal_codes` ["20095"].
 - Hand-off: "Trigger ready. Handing off to campaign creation: trigger T-DE-20095-20261203, audience
-  Hamburg Winter Storm - Firestone Winterhawk (<profile_count> profiles<, geo filter: postcodes if applied>), products Firestone Winterhawk 4, season Winter."
+  Winter Readiness DE – Email (ID <id>, <profile_count> profiles, geo filter: 20095), products Firestone Winterhawk 4, season Winter."
 
 ## Test cases (change one thing in any valid feed)
 
@@ -296,3 +349,6 @@ Result:
 | T15 | Eligible audience created minutes ago (not yet in the Knowledge Graph) | Found via the live Segmentation API and selected |
 | T16 | Two audiences with identical rules, one batch and one streaming, both evaluated today | Collapsed before scoring: streaming kept and auto-selected (only eligible audience left); batch twin in runners_up; **no human_required** |
 | T17 | Live API unavailable | Falls back to cached source, with a note that recent audiences may be missing; never returns `none` without saying so |
+| T18 | "Check the signals" with nothing pasted | Calls `get_external_signals` (feed `all`) first, then runs R1–R4 on its response |
+| T19 | `get_external_signals` errors | Reports the error and stops; no invented signals; offers to accept pasted JSON |
+| T20 | Any TRIGGERED run with a selected audience | Reply ends with the `selected_audience` block holding the exact AEP `audience_id` and `audience_name` |
