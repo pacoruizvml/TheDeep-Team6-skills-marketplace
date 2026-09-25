@@ -10,6 +10,13 @@ import { customers, dataset, anchorTime, type Market, type TyreCategory } from "
 import { CONFIG } from "../lib/rules.js";
 import { audit, mutate, nextId, readState, now, type AudienceRecord } from "../lib/store.js";
 import { ok, fail } from "../lib/mcp.js";
+import fs from "node:fs";
+
+/** External trigger feeds (weather + competitor pricing). Read on every call, so edits to the JSON apply without restart. */
+const EXTERNAL_SIGNALS_FILE = process.env.EXTERNAL_SIGNALS_FILE ?? new URL("../fixtures/external-signals.json", import.meta.url);
+function loadExternalSignals(): { weather_feed: Record<string, unknown>; competitor_pricing_feed: Record<string, unknown> } {
+  return JSON.parse(fs.readFileSync(EXTERNAL_SIGNALS_FILE, "utf8"));
+}
 
 const DAY = 86_400_000;
 const SEV_RANK = { low: 0, moderate: 1, high: 2, severe: 3 } as const;
@@ -31,6 +38,23 @@ function withinDays(ts: string, days: number) {
 
 export function buildSignalServer(): McpServer {
   const server = new McpServer({ name: "bridgestone-signal-to-audience-agent", version: "0.1.0" });
+
+  server.registerTool("get_external_signals", {
+    title: "Get external trigger signals (weather + competitor pricing)",
+    description: "START HERE. Returns the external signal feeds that trigger a reactive campaign: the weather feed (WeatherGridAPI) and the competitor pricing feed (Competitor Price Monitor) for Germany. Use them to decide whether the opportunity is actionable, which postal areas are affected, and which competitor promotion is relevant. SIMULATED feeds.",
+    inputSchema: { feed: z.enum(["all", "weather", "competitor"]).default("all").describe("Which feed to return") },
+  }, async ({ feed }) => {
+    const data = loadExternalSignals();
+    const payload: Record<string, unknown> = {};
+    if (feed !== "competitor") payload.weather_feed = data.weather_feed;
+    if (feed !== "weather") payload.competitor_pricing_feed = data.competitor_pricing_feed;
+    mutate((s) => audit(s, {
+      agent: "signal", tool: "get_external_signals", eventType: "EXTERNAL_SIGNALS_READ",
+      summary: `Read external feeds (${feed}): weather ${feed !== "competitor" ? (data.weather_feed.record_count as number) : 0} records, competitor ${feed !== "weather" ? (data.competitor_pricing_feed.record_count as number) : 0} records`,
+      refs: { market: "DE" },
+    }));
+    return ok(payload);
+  });
 
   server.registerTool("get_weather_alerts", {
     title: "Get active weather alerts",

@@ -32,7 +32,9 @@ export function approvalPackage(s: State, rec: WorkfrontRecord) {
     trigger: (() => {
       const ev = s.audit.filter((e) => e.eventType === "OPPORTUNITY_EVALUATED" && e.refs.market === a?.market && (!a || e.timestamp <= a.createdAt)).pop();
       const d = ev?.details as { checks?: { weather?: unknown; competitor?: { signals?: unknown } }; evaluatedAt?: string } | undefined;
-      return d ? { evaluatedAt: d.evaluatedAt, weather: d.checks?.weather, competitor: d.checks?.competitor?.signals } : null;
+      if (d) return { evaluatedAt: d.evaluatedAt, weather: d.checks?.weather, competitor: d.checks?.competitor?.signals };
+      const ext = s.audit.filter((e) => e.eventType === "EXTERNAL_SIGNALS_READ").pop();
+      return ext ? { source: "get_external_signals", readAt: ext.timestamp, summary: ext.summary } : null;
     })(),
     audience: a ? { audienceId: a.audienceId, market: a.market, postalPrefixes: a.postalPrefixes, strategy: a.strategy, rationale: a.definition.rationale, funnel: a.funnel, finalCount: a.finalCount } : null,
     dealer: n ? { dealerId: n.dealerId, request: n.reply?.text, requestSource: n.reply?.source } : null,
@@ -59,15 +61,17 @@ export function buildGovernanceServer(): McpServer {
   server.registerTool("create_workfront_record", {
     title: "Create Workfront record (simulated)",
     description: "Creates the governance record that ties together trigger, audience, campaign, arbitration and approval. SIMULATED Workfront (local record in the Workfront field schema).",
-    inputSchema: { audienceId: z.string(), campaignId: z.string().optional(), title: z.string().default("Reactive winter campaign") },
-  }, async ({ audienceId, campaignId, title }) => {
+    inputSchema: { audienceId: z.string().optional(), campaignId: z.string().optional(), title: z.string().default("Reactive winter campaign") },
+  }, async ({ audienceId: audienceIn, campaignId, title }) => {
     const st = readState();
-    if (!st.audiences[audienceId]) return fail(`Unknown audienceId ${audienceId}`);
+    if (!audienceIn && !campaignId) return fail("Provide audienceId and/or campaignId.");
+    if (audienceIn && !st.audiences[audienceIn]) return fail(`Unknown audienceId ${audienceIn}`);
     if (campaignId && !st.campaigns[campaignId]) return fail(`Unknown campaignId ${campaignId}`);
+    const audienceId = audienceIn ?? (campaignId ? st.campaigns[campaignId].audienceId : "");
     const rec = mutate((s) => {
       const r: WorkfrontRecord = { recordId: nextId(s, "WF-SIM", 4), createdAt: now(), title, audienceId, campaignId, status: "OPEN" };
       s.workfront[r.recordId] = r;
-      audit(s, { agent: "governance", tool: "create_workfront_record", eventType: "WORKFRONT_RECORD_CREATED", summary: `${r.recordId} created: ${title}`, refs: { recordId: r.recordId, audienceId, campaignId } });
+      audit(s, { agent: "governance", tool: "create_workfront_record", eventType: "WORKFRONT_RECORD_CREATED", summary: `${r.recordId} created: ${title}`, refs: { recordId: r.recordId, audienceId: audienceId || undefined, campaignId } });
       return r;
     });
     return ok({ ...rec, system: "SIMULATED Workfront (local fallback, Workfront field schema)", auditViewPath: `/audit/${rec.recordId}` });
@@ -173,12 +177,12 @@ export function buildGovernanceServer(): McpServer {
     const journey = mutate((s) => {
       const j = {
         journeyId: nextId(s, "AJO-SIM", 3),
-        name: `Winter Replacement ${a.market} ${a.postalPrefixes.join("/")} — ${rec.recordId}`,
+        name: a ? `Winter Replacement ${a.market} ${a.postalPrefixes.join("/")} — ${rec.recordId}` : `${c.campaignName ?? "Reactive winter campaign"} — ${rec.recordId}`,
         status: "STAGED FOR ACTIVATION (not activated)",
         system: "SIMULATED Adobe Journey Optimizer",
-        audience: { audienceId: a.audienceId, size: a.finalCount },
+        audience: a ? { audienceId: a.audienceId, size: a.finalCount } : { audienceId: null, note: "Audience defined by the orchestrator (not built with build_audience)" },
         steps: [
-          { type: "audienceEntry", audienceId: a.audienceId },
+          { type: "audienceEntry", audienceId: a?.audienceId ?? null },
           { type: "email", language: v.language, subject: v.subject, headline: v.headline, campaignId: c.campaignId, version: v.version },
           { type: "wait", duration: "P3D" },
           { type: "condition", rule: "quoteRequested OR purchaseCompleted", onFalse: "reminderEmail" },
@@ -187,7 +191,7 @@ export function buildGovernanceServer(): McpServer {
         stagedAt: now(),
       };
       s.workfront[recordId].journey = j;
-      audit(s, { agent: "governance", tool: "stage_ajo_journey", eventType: "AJO_JOURNEY_STAGED", summary: `${j.journeyId} STAGED (not activated)`, refs: { recordId, campaignId: c.campaignId, audienceId: a.audienceId }, details: j });
+      audit(s, { agent: "governance", tool: "stage_ajo_journey", eventType: "AJO_JOURNEY_STAGED", summary: `${j.journeyId} STAGED (not activated)`, refs: { recordId, campaignId: c.campaignId, audienceId: a?.audienceId }, details: j });
       return j;
     });
     return ok({ journey });

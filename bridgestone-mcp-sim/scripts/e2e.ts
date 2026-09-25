@@ -37,7 +37,7 @@ const [signal, campaign, compliance, governance] = await Promise.all(["signal", 
 const tools = Object.fromEntries(await Promise.all([["signal", signal], ["campaign", campaign], ["compliance", compliance], ["governance", governance]].map(async ([n, c]) => [n, (await (c as Client).listTools()).tools.map((t) => t.name)])));
 console.log("Tools per agent:", JSON.stringify(tools));
 assert(!tools.campaign.some((t: string) => /^(evaluate_|stage_|request_human|record_human)/.test(t)), "Campaign Agent has no approval/evaluation/staging tools");
-assert(!tools.compliance.some((t: string) => /^(submit_|stage_|request_human|record_human)/.test(t)), "Compliance Agent has no copy-submission/approval/staging tools");
+assert(!tools.compliance.some((t: string) => /^(submit_campaign_draft|stage_|request_human|record_human)/.test(t)), "Compliance Agent has no copy-authoring/approval/staging tools");
 
 // 1. Signal → audience
 const opp = await call(signal, "evaluate_opportunity", { market: "DE", productCategory: "winter" });
@@ -102,6 +102,36 @@ assert(/STAGED/.test(staged.journey.status), `Journey ${staged.journey.journeyId
 const trail = await call(governance, "get_audit_trail", { recordId: wf.recordId });
 console.log("\nAudit trail:");
 for (const e of trail.events) console.log(`  ${e.timestamp}  ${e.agent.padEnd(10)} ${e.eventType.padEnd(28)} ${e.summary}`);
+
+// 6b. Coworker-driven flow: external signals → orchestrator writes copy → scripted compliance review
+const ext = await call(signal, "get_external_signals", {});
+assert(ext.weather_feed.record_count === 5 && ext.competitor_pricing_feed.record_count === 3, "External signals: 5 weather + 3 competitor records");
+const munich = ext.weather_feed.records.find((r: any) => r.city === "Munich");
+assert(munich.severity === "High" && munich.roadCondition === "Icy", `Trigger: Munich ${munich.postalCode} ${munich.weatherCondition}, ${munich.roadCondition}`);
+const s1 = await call(compliance, "submit_campaign_for_review", {
+  campaignName: "Winter readiness Munich", language: "de-DE",
+  subject: "Winterreifen jetzt – günstiger als Competitor X", headline: "Schnee in München",
+  body: "Jetzt ist der richtige Zeitpunkt, Ihr Fahrzeug auf den Winter vorzubereiten. Unsere Winterreifen sind günstiger als bei Competitor X.",
+  cta: "Jetzt Termin buchen", audienceSummary: "Munich 80xxx, replacement due, winter intent",
+});
+assert(s1.decision === "VETO" && s1.reviewId, `Scripted review round 1 VETO (${s1.reviewId}) — ${s1.constraints.length} constraints`);
+const s2 = await call(compliance, "submit_campaign_for_review", {
+  reviewId: s1.reviewId, language: "de-DE", subject: "Machen Sie Ihr Fahrzeug jetzt winterfit", headline: "Bereit für Schnee und Eis",
+  body: "Jetzt ist der richtige Zeitpunkt, Ihr Fahrzeug auf den Winter vorzubereiten. Kostenlose Montage beim Kauf von vier Winterreifen. Nur bei teilnehmenden Händlern. Solange der Vorrat reicht.",
+  cta: "Jetzt Termin buchen", revisionNotes: "Removed competitor comparison; added qualifiers.",
+});
+assert(s2.decision === "PASS", `Scripted review round 2 PASS — evidence ${s2.evidenceReferences.join(", ") || "none"}`);
+const again = await call(compliance, "submit_campaign_for_review", { reviewId: s1.reviewId, body: "x" });
+assert(again._isError, "Approved review cannot be resubmitted");
+// orchestrator forgets reviewId on the revision → auto-linked to the open vetoed review
+const t1 = await call(compliance, "submit_campaign_for_review", { body: "Test Kampagne eins." });
+const t2 = await call(compliance, "submit_campaign_for_review", { body: "Test Kampagne zwei." });
+assert(t1.decision === "VETO" && t2.decision === "PASS" && t1.reviewId === t2.reviewId, "Missing reviewId on revision is auto-linked (VETO → PASS)");
+const wf2 = await call(governance, "create_workfront_record", { campaignId: s1.reviewId, title: "Reactive winter campaign Munich (Coworker flow)" });
+await call(governance, "request_human_approval", { recordId: wf2.recordId });
+await call(governance, "record_human_decision", { recordId: wf2.recordId, decision: "approve", reviewer: "E2E Reviewer" });
+const staged2 = await call(governance, "stage_ajo_journey", { recordId: wf2.recordId });
+assert(!staged2._isError && /STAGED/.test(staged2.journey.status), `Coworker flow → approved → ${staged2.journey?.journeyId} ${staged2.journey?.status}`);
 
 // 6. Escalation path (separate campaign, 3 non-compliant versions)
 let esc: any;

@@ -145,5 +145,117 @@ export function buildComplianceServer(): McpServer {
     });
   });
 
+  // ---------------------------------------------------------------------------------------------
+  // SCRIPTED DEMO REVIEW — the orchestrator (Coworker) generates the campaign text itself and sends
+  // it here. Decision is hard-coded for a reliable demo: 1st submission => VETO, 2nd => PASS.
+  // Reasons/constraints are taken from the real rule engine when it finds issues, otherwise from a
+  // scripted default. Every verdict is labelled decisionMode = SCRIPTED_DEMO in the audit trail.
+  // ---------------------------------------------------------------------------------------------
+  server.registerTool("submit_campaign_for_review", {
+    title: "Submit generated campaign for compliance review",
+    description: "Send the campaign text you generated (subject, headline, body, CTA) for compliance review. Returns VETO with reasons and constraints, or PASS. On VETO: revise the copy yourself to satisfy every constraint and call this tool again with the reviewId you received. Compliance never writes replacement copy. (Demo script: the first submission of a campaign is vetoed, the revised submission is approved.)",
+    inputSchema: {
+      reviewId: z.string().optional().describe("Omit for a new campaign. Pass the reviewId from the VETO response when resubmitting a revision."),
+      campaignName: z.string().optional(),
+      market: z.string().default("DE"),
+      language: z.string().default("de-DE"),
+      subject: z.string().optional(),
+      headline: z.string().optional(),
+      body: z.string().min(1).describe("Full campaign body text"),
+      cta: z.string().optional(),
+      offer: z.string().optional().describe("Offer used in the campaign, if any"),
+      audienceId: z.string().optional(),
+      audienceSummary: z.string().optional().describe("Short description of the target audience (who, where, how many)"),
+      englishTranslation: z.string().optional(),
+      revisionNotes: z.string().optional().describe("On resubmission: how each constraint was addressed"),
+    },
+  }, async (args) => {
+    const st = readState();
+    let campaignId = args.reviewId;
+    let autoLinked = false;
+    if (campaignId) {
+      const c = st.campaigns[campaignId];
+      if (!c) return fail(`Unknown reviewId ${campaignId}. Omit reviewId to start a new review.`);
+      if (c.status === "COMPLIANCE_PASSED") return fail(`Review ${campaignId} is already approved. Omit reviewId to start a new review.`);
+    } else {
+      // Robustness: if the orchestrator forgets the reviewId, attach to the open vetoed scripted review.
+      const open = Object.values(st.campaigns).filter((c) => c.mode === "scripted" && c.status === "VETOED").pop();
+      if (open) { campaignId = open.campaignId; autoLinked = true; }
+    }
+
+    const fields = { subject: args.subject, headline: args.headline, body: args.body, cta: args.cta };
+    const { detected, missingQualifiers, warnings } = analyseCopy(fields, args.language, now());
+    const realViolations = detected.filter((d) => d.outcome === "violation");
+    const approvedClaims = detected.filter((d) => d.outcome === "approved");
+
+    const result = mutate((s) => {
+      let c = campaignId ? s.campaigns[campaignId] : undefined;
+      if (!c) {
+        c = { campaignId: nextId(s, "CMP", 3), createdAt: now(), audienceId: args.audienceId ?? "", status: "DRAFT", versions: [], verdicts: [], guardrailChecks: [], mode: "scripted", campaignName: args.campaignName };
+        s.campaigns[c.campaignId] = c;
+      }
+      const version = c.versions.length + 1;
+      c.versions.push({
+        version, submittedAt: now(), language: args.language, subject: args.subject ?? "", headline: args.headline ?? "", body: args.body, cta: args.cta ?? "",
+        englishTranslation: args.englishTranslation, revisionNotes: [args.offer ? `Offer: ${args.offer}` : "", args.audienceSummary ? `Audience: ${args.audienceSummary}` : "", args.revisionNotes ?? ""].filter(Boolean).join(" | ") || undefined,
+      });
+      audit(s, { agent: "campaign", tool: "submit_campaign_for_review", eventType: version === 1 ? "CAMPAIGN_DRAFT_SUBMITTED" : "CAMPAIGN_REVISION_SUBMITTED", summary: `${c.campaignId} v${version} submitted for review (${args.language})${autoLinked ? " — auto-linked to open review" : ""}`, refs: { campaignId: c.campaignId, audienceId: c.audienceId || undefined }, details: c.versions[version - 1] });
+
+      const isFirst = version === 1;
+      let violations: unknown[];
+      let constraints: string[];
+      if (isFirst) {
+        if (realViolations.length || missingQualifiers.length) {
+          violations = realViolations.map((x) => ({ field: x.field, quotedText: x.sentence, categories: x.categories, ruleIds: x.ruleIds, reason: x.reason }));
+          constraints = constraintsFor(realViolations, missingQualifiers);
+          if (missingQualifiers.length && !realViolations.length) violations.push({ field: "all", quotedText: "(offer terms)", categories: ["offer"], ruleIds: ["CLM-06"], reason: `Missing required qualifiers: ${[...new Set(missingQualifiers.map((m) => m.qualifier))].join(", ")}` });
+        } else {
+          violations = [{
+            field: "all", quotedText: "(campaign copy as a whole)", categories: ["comparative", "offer"], ruleIds: ["CLM-01", "CLM-06"],
+            reason: "Reactive price messaging responds to a competitor promotion without approved like-for-like comparative evidence, and offer terms lack the required qualifiers.",
+          }];
+          constraints = [
+            "Remove any direct or implied comparison with competitor prices or promotions",
+            "Use only claims linked to active evidence records in the claims library",
+            'Include all required offer qualifiers: "Nur bei teilnehmenden Händlern", "Solange der Vorrat reicht"',
+            "Do not imply absolute price leadership or superiority (best, safest, cheapest, No. 1)",
+            "Preserve the approved offer and its mandatory terms",
+          ];
+        }
+      } else {
+        violations = [];
+        constraints = [];
+      }
+      const decision: ComplianceVerdict["decision"] = isFirst ? "VETO" : "PASS";
+      const evidence = [...new Set(approvedClaims.map((d) => d.matchedClaimId!))].map((id) => `${id} → ${CLAIMS_LIBRARY.find((x) => x.claimId === id)!.evidenceReference}`);
+      const vd: ComplianceVerdict = {
+        verdictId: nextId(s, "VRD", 3), timestamp: now(), campaignId: c.campaignId, version, round: version, maxRounds: CONFIG.maxArbitrationRounds, decision,
+        decisionMode: "SCRIPTED_DEMO (1st submission VETO, 2nd PASS)",
+        ruleGroups: { claims: { detectedClaims: detected, missingQualifiers } }, violations, constraints, evidenceReferences: evidence, warnings,
+      };
+      c.verdicts.push(vd);
+      c.status = decision === "PASS" ? "COMPLIANCE_PASSED" : "VETOED";
+      audit(s, {
+        agent: "compliance", tool: "submit_campaign_for_review", eventType: decision === "PASS" ? "COMPLIANCE_PASS" : "COMPLIANCE_VETO",
+        summary: `${c.campaignId} v${version}: ${decision} (round ${version} of ${CONFIG.maxArbitrationRounds})`, refs: { campaignId: c.campaignId, verdictId: vd.verdictId, audienceId: c.audienceId || undefined }, details: vd,
+      });
+      return vd;
+    });
+
+    if (result.decision === "VETO") {
+      return ok({
+        decision: "VETO", reviewId: result.campaignId, verdictId: result.verdictId, round: `${result.round} of ${result.maxRounds}`,
+        violations: result.violations, constraints: result.constraints, warnings,
+        next: `Revise the campaign copy yourself so it satisfies every constraint, then call submit_campaign_for_review again with reviewId="${result.campaignId}" and revisionNotes.`,
+        note: "Compliance is the referee, not the copywriter: no replacement wording is provided.",
+      });
+    }
+    return ok({
+      decision: "PASS", status: "APPROVED BY COMPLIANCE", reviewId: result.campaignId, verdictId: result.verdictId, round: `${result.round} of ${result.maxRounds}`,
+      evidenceReferences: result.evidenceReferences, warnings,
+      next: `Compliance passed. Hand over to Governance: create_workfront_record(campaignId="${result.campaignId}") then request_human_approval.`,
+    });
+  });
+
   return server;
 }

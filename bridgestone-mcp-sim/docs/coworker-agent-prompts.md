@@ -88,3 +88,22 @@ compliance.
 - Run `npm run reset` before each run, so record IDs start at 0001.
 - Keep `/review/<recordId>` open in a browser tab for the human approval moment. Keep `/audit/<recordId>` open for the finale.
 - To let a teammate type the dealer's reply live, start with `SCRIPTED_DEALER_REPLY=off` and open `/dealer/NTF-001`.
+
+---
+
+## Coworker-driven variant (scripted veto → approval)
+
+Use this if Coworker writes the campaign itself instead of using the Campaign MCP server.
+
+```text
+1. Call Signal-to-Audience get_external_signals. Identify the actionable trigger (severity, snow,
+   road condition, validity) and the relevant competitor promotion (winter category, % change,
+   regions, comparable Bridgestone product). Explain why the others are not actionable.
+2. Define the audience for the affected area (optionally build_audience with postal prefix "80")
+   and write a German campaign (subject, headline, body, CTA) plus an English translation.
+3. Send it to Compliance submit_campaign_for_review. If VETO: show the violations and constraints,
+   rewrite the copy yourself to satisfy every constraint, and resubmit with the same reviewId and
+   revisionNotes. Never ask Compliance for wording.
+4. After PASS: Governance create_workfront_record(campaignId=reviewId) → request_human_approval →
+   share the review link → after approval, stage_ajo_journey and show get_audit_trail.
+```

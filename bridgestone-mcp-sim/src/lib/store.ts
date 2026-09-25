@@ -67,6 +67,7 @@ export interface ComplianceVerdict {
   round: number;
   maxRounds: number;
   decision: "PASS" | "VETO" | "ESCALATE";
+  decisionMode?: string;
   ruleGroups: Record<string, unknown>;
   violations: unknown[];
   constraints: string[];
@@ -83,6 +84,9 @@ export interface CampaignRecord {
   versions: CampaignVersion[];
   verdicts: ComplianceVerdict[];
   guardrailChecks: { type: string; timestamp: string; decision: string; result: unknown }[];
+  /** "scripted" = submitted via submit_campaign_for_review (1st submission VETO, 2nd PASS) */
+  mode?: "rules" | "scripted";
+  campaignName?: string;
 }
 
 export interface WorkfrontRecord {
