@@ -12,6 +12,9 @@ import { audit, mutate, nextId, readState, now, type ComplianceVerdict } from ".
 import { ok, fail } from "../lib/mcp.js";
 
 const DAY = 86_400_000;
+// Tool hints for MCP clients: nothing here deletes data or reaches outside systems.
+const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
+const NON_DESTRUCTIVE = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } as const;
 
 export function buildComplianceServer(): McpServer {
   const server = new McpServer({ name: "bridgestone-compliance-guardrails-agent", version: "0.1.0" });
@@ -19,12 +22,14 @@ export function buildComplianceServer(): McpServer {
   server.registerTool("get_ruleset", {
     title: "Get governance ruleset",
     description: "Returns the synthetic Bridgestone governance ruleset (brand identity, tone, writing style, claims rules, audience & offer guardrails, segment context) and arbitration configuration.",
+    annotations: { title: "Get governance ruleset", ...READ_ONLY },
     inputSchema: {},
   }, async () => ok({ ruleset: GOVERNANCE_RULESET, arbitration: { maxRounds: CONFIG.maxArbitrationRounds, onLimit: "ESCALATE to human legal/brand reviewer" }, config: CONFIG }));
 
   server.registerTool("evaluate_audience_guardrails", {
     title: "Rule group 1 — Audience guardrails",
     description: "Re-verifies every audience member against consent, email opt-in, recent-purchase suppression, frequency cap, regional relevance and purpose match. Deterministic.",
+    annotations: NON_DESTRUCTIVE,
     inputSchema: { audienceId: z.string(), campaignId: z.string().optional() },
   }, async ({ audienceId, campaignId }) => {
     const st = readState();
@@ -54,6 +59,7 @@ export function buildComplianceServer(): McpServer {
   server.registerTool("evaluate_offer_guardrails", {
     title: "Rule group 2 — Offer / business guardrails",
     description: "Checks the campaign's offer against approved offers, discount limit, inventory, demand and dealer capacity. Deterministic; thresholds are demo configuration.",
+    annotations: NON_DESTRUCTIVE,
     inputSchema: { campaignId: z.string(), requestedDiscountPct: z.number().min(0).max(100).optional().describe("Optional: a discount requested by dealer/campaign that is not an approved offer") },
   }, async ({ campaignId, requestedDiscountPct }) => {
     const st = readState();
@@ -91,6 +97,7 @@ export function buildComplianceServer(): McpServer {
   server.registerTool("evaluate_campaign_claims", {
     title: "Rule group 3 — Claim guardrails (veto authority)",
     description: "Evaluates the latest campaign version. Deterministic claim detection + claims-library lookup decides PASS / VETO / ESCALATE (at the round limit). Returns reasons and constraints only — never replacement copy. Optionally pass the claims you extracted yourself; they are logged for comparison but do not change the deterministic decision.",
+    annotations: NON_DESTRUCTIVE,
     inputSchema: {
       campaignId: z.string(),
       llmExtractedClaims: z.array(z.object({ text: z.string(), category: z.string() })).optional(),
@@ -153,7 +160,8 @@ export function buildComplianceServer(): McpServer {
   // ---------------------------------------------------------------------------------------------
   server.registerTool("submit_campaign_for_review", {
     title: "Submit generated campaign for compliance review",
-    description: "Send the campaign text you generated (subject, headline, body, CTA) for compliance review. Returns VETO with reasons and constraints, or PASS. On VETO: revise the copy yourself to satisfy every constraint and call this tool again with the reviewId you received. Compliance never writes replacement copy. (Demo script: the first submission of a campaign is vetoed, the revised submission is approved.)",
+    description: "Send the campaign text you generated (subject, headline, body, CTA) for compliance review. Returns VETO with reasons and constraints, or PASS. On VETO: revise the copy yourself to satisfy every constraint and call this tool again with the reviewId you received. Compliance never writes replacement copy. (Demo script: the first submission of a campaign is vetoed, the revised submission is approved, unless a hard guardrail is still broken: a discount above the maximum always blocks.)",
+    annotations: NON_DESTRUCTIVE,
     inputSchema: {
       reviewId: z.string().optional().describe("Omit for a new campaign. Pass the reviewId from the VETO response when resubmitting a revision."),
       campaignName: z.string().optional(),
@@ -161,7 +169,7 @@ export function buildComplianceServer(): McpServer {
       language: z.string().default("de-DE"),
       subject: z.string().optional(),
       headline: z.string().optional(),
-      body: z.string().min(1).describe("Full campaign body text"),
+      body: z.string().optional().describe("Full campaign body text (required)"),
       cta: z.string().optional(),
       offer: z.string().optional().describe("Offer used in the campaign, if any"),
       audienceId: z.string().optional(),
@@ -170,6 +178,8 @@ export function buildComplianceServer(): McpServer {
       revisionNotes: z.string().optional().describe("On resubmission: how each constraint was addressed"),
     },
   }, async (args) => {
+    if (!args.body || !args.body.trim()) return fail("body is required: send the full campaign body text (plus subject, headline, cta if available).");
+    const body = args.body;
     const st = readState();
     let campaignId = args.reviewId;
     let autoLinked = false;
@@ -177,13 +187,14 @@ export function buildComplianceServer(): McpServer {
       const c = st.campaigns[campaignId];
       if (!c) return fail(`Unknown reviewId ${campaignId}. Omit reviewId to start a new review.`);
       if (c.status === "COMPLIANCE_PASSED") return fail(`Review ${campaignId} is already approved. Omit reviewId to start a new review.`);
+      if (c.status === "ESCALATED") return fail(`Review ${campaignId} is escalated to a human reviewer; automated resubmission is closed.`);
     } else {
       // Robustness: if the orchestrator forgets the reviewId, attach to the open vetoed scripted review.
       const open = Object.values(st.campaigns).filter((c) => c.mode === "scripted" && c.status === "VETOED").pop();
       if (open) { campaignId = open.campaignId; autoLinked = true; }
     }
 
-    const fields = { subject: args.subject, headline: args.headline, body: args.body, cta: args.cta };
+    const fields = { subject: args.subject, headline: args.headline, body, cta: args.cta };
     const { detected, missingQualifiers, warnings } = analyseCopy(fields, args.language, now());
     const realViolations = detected.filter((d) => d.outcome === "violation");
     const approvedClaims = detected.filter((d) => d.outcome === "approved");
@@ -196,12 +207,19 @@ export function buildComplianceServer(): McpServer {
       }
       const version = c.versions.length + 1;
       c.versions.push({
-        version, submittedAt: now(), language: args.language, subject: args.subject ?? "", headline: args.headline ?? "", body: args.body, cta: args.cta ?? "",
+        version, submittedAt: now(), language: args.language, subject: args.subject ?? "", headline: args.headline ?? "", body, cta: args.cta ?? "",
         englishTranslation: args.englishTranslation, revisionNotes: [args.offer ? `Offer: ${args.offer}` : "", args.audienceSummary ? `Audience: ${args.audienceSummary}` : "", args.revisionNotes ?? ""].filter(Boolean).join(" | ") || undefined,
       });
       audit(s, { agent: "campaign", tool: "submit_campaign_for_review", eventType: version === 1 ? "CAMPAIGN_DRAFT_SUBMITTED" : "CAMPAIGN_REVISION_SUBMITTED", summary: `${c.campaignId} v${version} submitted for review (${args.language})${autoLinked ? " — auto-linked to open review" : ""}`, refs: { campaignId: c.campaignId, audienceId: c.audienceId || undefined }, details: c.versions[version - 1] });
 
       const isFirst = version === 1;
+      // Hard offer guardrail (never scripted): discount above the maximum always blocks.
+      const pcts = [args.offer, args.subject, args.headline, body, args.cta].filter(Boolean).join(" ").match(/(\d+(?:[.,]\d+)?)\s*%/g) ?? [];
+      const maxPct = pcts.reduce((m, x) => Math.max(m, parseFloat(x.replace(",", "."))), 0);
+      const offerViolation = maxPct > CONFIG.maxDiscountPct
+        ? { field: "offer", quotedText: `${maxPct}%`, categories: ["offer"], ruleIds: ["OFF-MAX"], reason: `Discount ${maxPct}% exceeds the maximum of ${CONFIG.maxDiscountPct}% for reactive campaigns (hard guardrail).` }
+        : null;
+      const offerConstraint = `Reduce the discount to at most ${CONFIG.maxDiscountPct}% (or use the free-fitting service offer) and update the code/terms accordingly`;
       let violations: unknown[];
       let constraints: string[];
       if (isFirst) {
@@ -226,22 +244,30 @@ export function buildComplianceServer(): McpServer {
         violations = [];
         constraints = [];
       }
-      const decision: ComplianceVerdict["decision"] = isFirst ? "VETO" : "PASS";
+      if (offerViolation) { violations.push(offerViolation); constraints.push(offerConstraint); }
+      const decision: ComplianceVerdict["decision"] = isFirst ? "VETO" : !offerViolation ? "PASS" : version >= CONFIG.maxArbitrationRounds ? "ESCALATE" : "VETO";
       const evidence = [...new Set(approvedClaims.map((d) => d.matchedClaimId!))].map((id) => `${id} → ${CLAIMS_LIBRARY.find((x) => x.claimId === id)!.evidenceReference}`);
       const vd: ComplianceVerdict = {
         verdictId: nextId(s, "VRD", 3), timestamp: now(), campaignId: c.campaignId, version, round: version, maxRounds: CONFIG.maxArbitrationRounds, decision,
-        decisionMode: "SCRIPTED_DEMO (1st submission VETO, 2nd PASS)",
+        decisionMode: "SCRIPTED_DEMO (1st submission VETO, then PASS unless a hard guardrail such as the discount limit is still broken)",
         ruleGroups: { claims: { detectedClaims: detected, missingQualifiers } }, violations, constraints, evidenceReferences: evidence, warnings,
       };
       c.verdicts.push(vd);
-      c.status = decision === "PASS" ? "COMPLIANCE_PASSED" : "VETOED";
+      c.status = decision === "PASS" ? "COMPLIANCE_PASSED" : decision === "ESCALATE" ? "ESCALATED" : "VETOED";
       audit(s, {
-        agent: "compliance", tool: "submit_campaign_for_review", eventType: decision === "PASS" ? "COMPLIANCE_PASS" : "COMPLIANCE_VETO",
+        agent: "compliance", tool: "submit_campaign_for_review", eventType: decision === "PASS" ? "COMPLIANCE_PASS" : decision === "ESCALATE" ? "COMPLIANCE_ESCALATED" : "COMPLIANCE_VETO",
         summary: `${c.campaignId} v${version}: ${decision} (round ${version} of ${CONFIG.maxArbitrationRounds})`, refs: { campaignId: c.campaignId, verdictId: vd.verdictId, audienceId: c.audienceId || undefined }, details: vd,
       });
       return vd;
     });
 
+    if (result.decision === "ESCALATE") {
+      return ok({
+        decision: "ESCALATE", reviewId: result.campaignId, verdictId: result.verdictId, round: `${result.round} of ${result.maxRounds}`,
+        violations: result.violations, constraints: result.constraints,
+        escalation: { status: "Escalated", reason: "No compliant resolution within the configured arbitration limit", nextOwner: "Human legal/brand reviewer" },
+      });
+    }
     if (result.decision === "VETO") {
       return ok({
         decision: "VETO", reviewId: result.campaignId, verdictId: result.verdictId, round: `${result.round} of ${result.maxRounds}`,

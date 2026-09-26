@@ -11,6 +11,8 @@
  *
  * Transport: MCP Streamable HTTP, stateless (a fresh server+transport per request), JSON responses.
  */
+import fs from "node:fs";
+import path from "node:path";
 import express, { type Request, type Response, type NextFunction } from "express";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -61,13 +63,19 @@ function auth(req: Request, res: Response, next: NextFunction) {
   const bearer = req.headers.authorization?.replace(/^Bearer\s+/i, "");
   const provided = bearer ?? (req.headers["x-api-key"] as string | undefined) ?? (req.query.key as string | undefined);
   if (provided === API_KEY) return next();
+  log(req.path.split("/")[1] ?? "?", req);
+  console.log("  ↳ 401 Unauthorized (missing/invalid API key)");
   res.status(401).json({ jsonrpc: "2.0", error: { code: -32001, message: "Unauthorized: missing or invalid API key" }, id: null });
 }
 
+// Request log (console + runtime/requests.log) — shows exactly what the MCP client asks for.
+const REQUEST_LOG = path.resolve(process.cwd(), "runtime", "requests.log");
 function log(agent: string, req: Request) {
   const m = req.body?.method;
   const tool = m === "tools/call" ? ` → ${req.body?.params?.name}` : "";
-  console.log(`${new Date().toISOString()}  [${agent}] ${m ?? req.method}${tool}`);
+  const line = `${new Date().toISOString()}  [${agent}] ${req.method} ${req.originalUrl.replace(/key=[^&]+/, "key=***")} ${m ?? ""}${tool}  ua="${req.headers["user-agent"] ?? ""}"`;
+  console.log(line);
+  try { fs.mkdirSync(path.dirname(REQUEST_LOG), { recursive: true }); fs.appendFileSync(REQUEST_LOG, line + "\n"); } catch { /* ignore */ }
 }
 
 for (const name of agents) {
@@ -84,8 +92,8 @@ for (const name of agents) {
       if (!res.headersSent) res.status(500).json({ jsonrpc: "2.0", error: { code: -32603, message: "Internal server error" }, id: null });
     }
   };
-  const notAllowed = (_req: Request, res: Response) =>
-    void res.status(405).json({ jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed (stateless server: use POST)" }, id: null });
+  const notAllowed = (req: Request, res: Response) =>
+    void (log(name, req), res.status(405)).json({ jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed (stateless server: use POST)" }, id: null });
 
   for (const p of [`/${name}/mcp`, `/${name}`]) {
     app.post(p, auth, handler);

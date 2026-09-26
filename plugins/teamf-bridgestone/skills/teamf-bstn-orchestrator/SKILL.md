@@ -2,9 +2,9 @@
 name: teamf-bstn-orchestrator
 description: >
   [Team F · Bridgestone Demo 1 · v2] Top-level conductor for the Bridgestone reactive-campaign flow (Pillar 1). Fetches the weather + competitor
-  signals from the Team F Signal-to-Audience MCP tool `get_external_signals` (/signal/mcp), then runs the steps in
+  signals with the tool `get_external_signals`, then runs the steps in
   order (detect trigger and find the audience, create the campaign for that audience, compliance review via the
-  /compliance/mcp tool `submit_campaign_for_review`, AJO staging, Workfront approval gate), passes the selected
+  tool `submit_campaign_for_review`, AJO staging, Workfront approval gate), passes the selected
   audience ID from step to step, holds
   the flow state, logs every step, stops at the human points, and enforces "staged, not sent, until Workfront
   approval." Use when a user asks to "run the flow", "start the reactive campaign", "run the storm campaign end to
@@ -19,6 +19,71 @@ You run the whole flow. You **don't do the steps' work yourself**. You call the 
 pass the output of one step to the next, keep track of where the flow stands, and make sure nothing reaches
 customers without a human's approval.
 
+## Defaults (use without asking)
+
+- **Workfront project:** "TeamF – Bridgestone Reactive Campaigns". Pass it to `teamf-core-decision-trail` for every LOG / OPEN_GATE / CHECK_GATE.
+  Don't ask the user which project to use before starting or between steps. Use another project only if the user
+  names one in this conversation, then keep that one for the rest of the conversation. Only if the default project
+  can't be found does `teamf-core-decision-trail` ask (and uses its fallback log meanwhile).
+- **Approver:** the default in `teamf-core-decision-trail` (Stefanie Culley) unless the user names someone else.
+- If the user just says "continue", "go on" or "yes", keep these defaults and move on.
+
+## Execution mode (default: pre-authorised + narrated)
+
+### Pre-authorised: do these without asking
+- All read-only calls: signals, audiences, CJA, brand / governance checks, Workfront reads, AJO reads.
+- Compliance submissions and resubmissions (`submit_campaign_for_review`).
+- Creating (never overwriting) the AJO email template and the **draft** campaign; attaching the email template
+  generated in step 5a (built from the compliance-PASSED content), the audience and an active email configuration.
+- Creating / updating the Workfront decision-trail notes and the approval task in the default project.
+
+### Still needs an explicit instruction from the user
+- Activating, publishing, scheduling or sending anything.
+- Any change to approved wording (→ new compliance review and a new approval).
+- Real business choices: an offer above the ruleset limit, several active email configurations to choose from,
+  no matching audience.
+
+### Platform permission prompts
+Some tools ask for approval before a write action. That setting lives on the tool / connector; this skill can't
+turn it off. When a prompt appears, say *"⏸ Waiting for platform permission to <action>"* and continue once it's
+accepted. (Admins can switch specific write tools from "ask" to "allow"; keep "ask" on anything that activates,
+publishes or sends.)
+
+### Narrated mode (default): show the work, not just the result
+The audience should be able to follow what you're doing and **why**, in plain language, as it happens. Narrate
+every step in the chat (in addition to the Workfront decision trail) with this structure:
+
+**Before the step: "🧭 Step n · <name>"**
+- *Where we are:* what the previous steps produced that this step builds on (names, counts, IDs in words).
+- *What I'm going to do and why:* the goal of the step and the approach.
+- *Which tools / skills I'll use and why those:* e.g. "I'm calling the compliance review tool because an
+  independent referee must decide; I don't judge my own copy."
+
+**For each meaningful action inside the step**
+- *▶ Doing:* the action in plain words and its target (object name).
+- *🔎 What came back:* the key facts from the result, quoted from the tool output (numbers, names, statuses).
+- *💡 What it means:* your interpretation, clearly separated from the facts.
+- *✅ Decision:* what you chose, the **reason**, and the alternatives you considered and why you rejected them
+  (e.g. "Chose audience X: score 0.92, 1,416 profiles, covers postcode 80331; rejected Y: no winter-intent rule").
+- *📝 Logged:* "Logged <RECORD_TYPE> to Workfront — <link>" after each decision-trail record.
+
+**After the step: "📌 Step n summary"**, 3–5 lines: outcome, key numbers, links to anything created or changed,
+open risks or warnings, then *"Next: step n+1 · <name>, because <reason>."*
+
+**Narration rules**
+- Distinguish three kinds of statements: **facts** (from tool output), **rules** (from the governance checks /
+  flow rules, cite them) and **judgement** (your reasoning). Label judgement as such.
+- Say where each input came from (which tool, which feed, which step), and label simulated or scripted sources
+  (e.g. the demo compliance service) as such.
+- Explain vetoes and constraints in plain words: what was blocked, which rule, what the revision must change.
+- Show names and AJO / Workfront links for everything created or changed; no raw payloads, request bodies or
+  long internal IDs unless the user asks.
+- A failed or skipped action is never reported as done: *"✖ <what failed>, impact: <what it blocks>, next: <plan>"*.
+- Keep it readable: short paragraphs and bullets, no walls of JSON. The flow-state JSON is printed compact once
+  per step (not after every action).
+- The user can switch anytime: **"quiet mode"** (step summaries only), **"narrated mode"** (this, default),
+  **"step mode"** (narrated + pause after each step).
+
 ## Entry check (run before anything else)
 
 Check every item. If any fails, **stop**: call no tools and start no step. Reply `ENTRY CHECK FAILED:
@@ -26,9 +91,10 @@ teamf-bstn-orchestrator` and list each failed item with what's needed. If all pa
 `Entry check passed` and continue.
 
 1. **Required skills** are available by exact name: `teamf-bstn-trigger-detect`, `teamf-bstn-brief-assemble`,
-   `teamf-bstn-campaign-draft`, `teamf-core-decision-trail`. Never substitute a non-`teamf-` skill.
-2. **MCP connectors** are connected: Signal-to-Audience (`get_external_signals` is listed) and Compliance &
-   Guardrails (`submit_campaign_for_review` is listed).
+   `teamf-bstn-campaign-draft`, `teamf-bstn-ajo-email-template`, `teamf-core-decision-trail`. Never substitute a
+   non-`teamf-` skill.
+2. **Required tools** are available by tool name: `get_external_signals` and `submit_campaign_for_review`
+   (from whichever connected server provides them). **Tool resolution:** find tools by their **tool name** (e.g. `submit_campaign_for_review`), not by connector name, server name or endpoint. Connector labels and tool prefixes differ per environment (a tool may appear as `submit_campaign_for_review` or as `<any_prefix>__submit_campaign_for_review` / `<any prefix>.submit_campaign_for_review`); any connected tool whose name ends with the exact tool name counts. If no connected tool has that name, report the missing **tool name** and stop.
 3. **Mode** is `auto`, `step` or `status` (default `auto`). In `status` mode, skip items 1–2.
 4. **Optional steps** the user asked for (CJA, dealer) have their skill available; if not, say so and run without them.
 
@@ -40,12 +106,12 @@ entry check is skipped, and the flow continues.
 
 | Step | Skill / tool | Output passed on |
 |---|---|---|
-| 1 · Signals in | MCP tool `get_external_signals` (`feed: "all"`, **Signal-to-Audience** connector `/signal/mcp`), then `teamf-core-decision-trail` (LOG `SIGNAL_RECEIVED`) | the two feeds + feed summary |
+| 1 · Signals in | tool `get_external_signals` (`feed: "all"`), then `teamf-core-decision-trail` (LOG `SIGNAL_RECEIVED`) | the two feeds + feed summary |
 | 2 · Detect opportunity + find audience | `teamf-bstn-trigger-detect` (on the step 1 feeds) | **trigger object** + **selected audience** (`audience_id`, `audience_name`) |
 | 3 · Create the campaign | `teamf-bstn-brief-assemble` (brief for the step 2 audience), then `teamf-bstn-campaign-draft` (content v1) | **brief** + **campaign content v1** |
-| 4 · Compliance review | MCP tool `submit_campaign_for_review` (**Compliance & Guardrails** connector `/compliance/mcp`); on VETO, `teamf-bstn-campaign-draft` revises | **reviewId** + verdict history + **final PASSED content** |
-| 5 · Stage in AJO | AJO tools (draft only) | **staged campaign** (not sent) |
-| 6 · Approval gate | `teamf-core-decision-trail` (OPEN_GATE, then CHECK_GATE) | **gate status** |
+| 4 · Compliance review | tool `submit_campaign_for_review`; on VETO, `teamf-bstn-campaign-draft` revises | **reviewId** + verdict history + **final PASSED content** |
+| 5 · Stage in AJO | `teamf-bstn-ajo-email-template` (email template from the PASSED content), then AJO tools for a draft campaign with the audience (draft only) | **template name / ID / link** + **draft campaign ID** + audience attached yes/no (not sent) |
+| 6 · Approval gate | `teamf-core-decision-trail` (OPEN_GATE with the approval package + links, then CHECK_GATE) | **gate status** |
 
 **Optional steps, off by default.** Run them only if the user asks for them in this conversation (e.g. "include
 CJA insights", "include the dealer"). They run between step 2 and step 3:
@@ -71,7 +137,7 @@ If a required skill isn't available, say which one and stop at that step. Don't 
      (plus an English review translation) with the brief's offer, terms and creative category. The drafter
      doesn't pre-filter claims; step 4 decides what's allowed.
    - Show content v1 to the user: subject, preheader, headline, body, CTA, offer, language, English translation.
-4. **Step 4, compliance review via `/compliance/mcp`:**
+4. **Step 4, compliance review via the tool `submit_campaign_for_review`:**
    - **Round 1:** call `submit_campaign_for_review` **without** `reviewId`, with: `campaignName`, `market`,
      `language`, `subject`, `headline`, `body` (the full body text), `cta`, `offer`, `englishTranslation`,
      `audienceId` = `steps.2_trigger.audience_id`, and `audienceSummary` = *"<audience_name>, <profile_count>
@@ -92,13 +158,57 @@ If a required skill isn't available, say which one and stop at that step. Don't 
    - Step 6 `REJECTED` → stop; campaign closed.
 6. **Human points (pause and wait):** step 6, wait for the approver's decision in Workfront (plus the dealer's
    reply if that optional step is on). Everything else runs without pausing in `auto` mode.
-7. **Step 5, AJO staging:** create the campaign / journey as a **draft**, named
-   `<campaign name> - STAGED FOR DEMONSTRATION`, with the audience **`steps.2_trigger.audience_id`** and the
-   **PASSED** content from step 4 attached. **If `geo_filter_postal_codes` is not empty, add a condition limiting
-   the campaign to those postal codes** (e.g. a condition step / audience refinement in AJO). Never stage without
-   it. **Never publish, activate or send.**
-8. **Step 6, the gate:** call OPEN_GATE right after staging. Release is authorised **only** when CHECK_GATE
+7. **Step 5, AJO staging** (two parts, both drafts):
+   - **5a · Email template:** call `teamf-bstn-ajo-email-template` in flow mode with the **PASSED** content from
+     step 4 (verbatim), its `copy_version` and `reviewId`, the `brief_id`, the audience, and the session's sandbox.
+     Store its output block in `steps.5_staged` (`template_name`, `template_id`, `template_link`, `read_back_check`).
+     The template must not add wording; if anything must change, go back to step 3/4.
+   - **5b · Draft campaign with the audience:** with the AJO tools, create an email campaign (or journey) as a
+     **draft**, named `<campaign name> - v<copy_version> - STAGED FOR DEMONSTRATION`, with the audience
+     **`steps.2_trigger.audience_id`**. **If `geo_filter_postal_codes` is not empty, add a condition limiting it
+     to those postal codes.** Set `audience_attached: true` and store `campaign_draft_id` / `campaign_draft_link`.
+     Follow the **readiness rules** below; a campaign saved without them fails AJO validation.
+
+   **Step 5 readiness rules (mandatory):**
+   - **A · Email configuration first.** Before saving the campaign, list the sandbox's **active email channel
+     configurations** (channel = email, status active). Exactly one → use it. Several → ask the user to pick
+     (names only), then remember the choice for this conversation. None → **stop**: say an email configuration
+     must be created first, and save no campaign. Put the configuration in the campaign's email action; never
+     save an email action without one (that causes *"Incorrect package surface ID"* and *"Requested object not
+     found (SURFACE)"*). Store it in `steps.5_staged.email_configuration`.
+   - **B · Content in the campaign, not only in the template.** After saving, attach the **email template
+     generated in 5a** to the campaign's email message. That template was built from the compliance-PASSED
+     content, so it is the content that must go out, whatever its version number. If the tools can't apply a
+     template, copy the template's **subject**, **preheader**, **HTML body** and **plain-text body** (from the 5a
+     output block) into the message's default variant, unchanged. A template on its own doesn't count as staged. If the content can't be written (e.g. no message
+     exists yet), mark step 5 **FAILED**, not staged, and say exactly what's missing.
+   - **C · Required email elements** come from 5a: AJO opt-out link, mirror-page link, plain-text version. These
+     are technical elements with fixed boilerplate text, **not copy changes**, so they need no new compliance
+     review. Any wording change does.
+   - **D · Readiness check before saying "staged".** Run AJO's validation / readiness check on the campaign
+     (the list of notifications with `errorLevel`). Report "staged" only with **zero ERROR items**; list any
+     WARNINGs for the user and store both in `steps.5_staged.readiness`. Use the error table in
+     `teamf-bstn-ajo-email-template` to fix known errors, then re-check. After 2 failed fix attempts, stop and
+     report the remaining errors.
+   - **Fixing a campaign after approval:** adding the configuration, content or links to an existing draft
+     without changing wording keeps the same `copy_version`; log the fix (LOG `STAGING_FIXED`) and update the
+     links on the gate task. If any wording changed, the approval is void: back to step 4 and a new gate.
+   - If the AJO tools can't create the draft campaign or attach the audience, **don't hide it**: set
+     `audience_attached: false` with the exact reason, and pass the audience ID, name, count and geo filter to the
+     gate so the approver sees what will be attached at activation. This is stated in the package, not treated as
+     a compliance issue.
+   - **Never publish, activate or send.**
+8. **Step 6, the gate:** call OPEN_GATE right after staging and pass the **approval package inputs**: flow_id,
+   trigger summary, brief (brief_id + key values), audience (ID, name, count, geo filter, **why it was selected**
+   from step 2), PASSED content + `reviewId` + round history, offer, `steps.5_staged` (template link, draft campaign
+   link, `audience_attached`), and the decision-trail link. Release is authorised **only** when CHECK_GATE
    returns `APPROVED` for the **exact version** staged.
+   - **Pre-gate check (never open a gate on a known problem):** the step 4 verdict is PASS for the staged
+     `copy_version`; the offer is within the governance maximum (10% unless the Bridgestone checks say
+     otherwise); the template exists (`template_link`); the audience ID is set; step 5 readiness shows **zero
+     ERROR items** (an email configuration is set and the message has subject, HTML and text content). If any fails, don't open the gate:
+     report what failed and go back to the step that fixes it (offer → step 3 brief; copy → step 3/4; template →
+     step 5). Never send a package that says "discount above the limit" for approval.
    - `AMEND` → back to `teamf-bstn-campaign-draft` with the approver's comments (new version), then step 4 again
      (new `submit_campaign_for_review` without `reviewId`), then re-stage (5) and a **new** gate (6).
    - `OPEN` → report "awaiting approval" and wait.
@@ -112,7 +222,8 @@ If a required skill isn't available, say which one and stop at that step. Don't 
 
 ## Modes
 
-- `auto` (default): run through all steps, pausing only at the human points.
+- `auto` (default): run through all steps, pausing only at the human points. Narration follows the execution
+  mode above (narrated by default).
 - `step`: pause after every step and ask *"Continue to step N?"*
 - `status`: don't run anything; print the current flow state.
 
@@ -122,7 +233,7 @@ Keep one flow-state object, updated after every step, and print it (compact) aft
 
 ```json
 {
-  "flow_id": "F-<trigger_id>",
+  "flow_id": "F-<trigger_id>-<run start YYYYMMDDHHmm UTC>",
   "mode": "auto | step",
   "started_at": "",
   "current_step": 1,
@@ -131,9 +242,10 @@ Keep one flow-state object, updated after every step, and print it (compact) aft
     "2_trigger":    { "status": "", "ref": "trigger_id", "audience_id": "", "audience_name": "", "profile_count": 0, "geo_filter_postal_codes": [] },
     "3_campaign":   { "status": "", "brief_id": "", "campaign_name": "", "copy_version": 1 },
     "4_compliance": { "status": "", "review_id": "", "rounds_used": 0, "outcome": "PASS | VETO | ESCALATE", "final_version": null },
-    "5_staged":     { "status": "", "ref": "ajo draft id", "version": null },
-    "6_gate":       { "status": "OPEN | APPROVED | AMEND | REJECTED", "ref": "workfront task" }
+    "5_staged":     { "status": "", "template_name": "", "template_id": "", "template_link": "", "campaign_draft_id": "", "campaign_draft_link": "", "audience_attached": false, "email_configuration": "", "readiness": { "errors": [], "warnings": [] }, "version": null },
+    "6_gate":       { "status": "OPEN | APPROVED | AMEND | REJECTED | BLOCKED", "ref": "workfront task", "link": "" }
   },
+  "workfront_project": "TeamF – Bridgestone Reactive Campaigns",
   "optional": { "cja_insights": "off", "dealer": "off" },
   "sent": false,
   "kpis": { "signal_to_staged_minutes": null, "compliance_rounds": 0 },
@@ -145,14 +257,14 @@ Keep one flow-state object, updated after every step, and print it (compact) aft
 
 ## Progress view (for people watching)
 
-After each step, print one line:
+At the end of each step summary (and on its own in quiet mode), print the checklist so far:
 
 ```
 ✓ 1 Signals received: weather (5) + competitor (3)
 ✓ 2 Opportunity detected: <city> storm; <competitor> undercut <n> EUR; audience "<name>" (ID <audience_id>, <count>)
 ✓ 3 Campaign created: "<campaign name>", <offer>, <language> (v1)
 ✓ 4 Compliance (<reviewId>): VETO round 1 → PASS round 2
-✓ 5 Staged in AJO (not sent)
+✓ 5 Staged in AJO (not sent): template "<template_name>" <link>; draft campaign <id>, audience attached yes/no
 ⏳ 6 Awaiting approval from <approver> in Workfront
 ```
 
@@ -187,10 +299,11 @@ Firestone Winterhawk equivalent.
 
 1. Signals read (5 weather + 3 competitor); LOG SIGNAL_RECEIVED. 2. Trigger TRIGGERED (T-DE-20095-20261203);
 audience "Hamburg Winter Storm - Firestone Winterhawk" (ID `<id>`), auto-selected. 3. Brief B-T-DE-20095-20261203
-for that audience ID: 15% `WINTER15`, V-shape creative; draft v1 (de-DE + English). 4. `submit_campaign_for_review`
+for that audience ID: 10% `WINTER10` (14.1% undercut → 15 → capped at 10), V-shape creative; draft v1 (de-DE + English). 4. `submit_campaign_for_review`
 v1 → **VETO** (reviewId CMP-001: comparative claim without evidence; offer qualifiers missing); drafter revises
-v2 → resubmit with CMP-001 → **PASS**. 5. Staged in AJO as "… - STAGED FOR DEMONSTRATION" with audience `<id>` (not
-sent). 6. OPEN_GATE → approval task for the Campaign Approver; state `OPEN` → *"Awaiting approval."* Later
+v2 → resubmit with CMP-001 → **PASS**. 5. Email template "TeamF - Bridgestone - Hamburg Winter Storm - v<n> - STAGED
+FOR DEMONSTRATION" created from the PASSED content and attached to the draft campaign; draft campaign with audience `<id>` (not sent). 6. Pre-gate check
+passes; OPEN_GATE → approval task (template link, brief, audience + why) for the Campaign Approver; state `OPEN` → *"Awaiting approval."* Later
 CHECK_GATE → `APPROVED` → *"Approved, staged, ready to release."* `sent: false`.
 
 ## Test cases
@@ -209,4 +322,13 @@ CHECK_GATE → `APPROVED` → *"Approved, staged, ready to release."* `sent: fal
 | T10 | "Run the flow" with no feeds pasted | Step 1 calls `get_external_signals`; flow continues on its response |
 | T11 | Step 2 selects an audience | Flow state holds its exact `audience_id` / `audience_name`; step 3 brief, step 4 review and step 5 staging use that same ID |
 | T12 | Step 2 done, no optional steps requested | Goes straight to step 3 (no CJA, no dealer alert) |
+| T17 | No active email configuration in the sandbox | Stop at step 5; no campaign saved; say a configuration is needed |
+| T18 | Campaign saved but message empty | Content written to the message's default variant; readiness re-checked; only then "staged" |
+| T19 | Readiness shows ERROR items | Step 5 not staged; errors fixed via the error table or reported; no gate |
+| T14 | Offer above the governance maximum reaches step 6 | Pre-gate check fails; no gate; back to step 3 |
+| T15 | AJO can't attach the audience | Gate opens with `audience_attached: false` and the reason stated in the package |
+| T16 | Flow run again for the same trigger | New flow_id; new trail and gate tasks; earlier run's tasks untouched |
+| T20 | Default run | Each step narrated: where we are, plan + tools, results, meaning, decision + reason + alternatives, summary + next |
+| T21 | User says "quiet mode" | Only step summaries + checklist |
+| T22 | Platform permission prompt on a write | "⏸ Waiting for platform permission…"; continues after acceptance; never reported as done before |
 | T13 | Step 4 round 1 | `submit_campaign_for_review` called without `reviewId`, with the full content + `audienceId`; VETO → revised copy resubmitted with the same `reviewId` |

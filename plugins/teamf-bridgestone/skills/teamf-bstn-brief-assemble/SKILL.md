@@ -83,7 +83,8 @@ Include per-segment counts if the trigger object has them; otherwise write `"cou
 ### 5 · Offer (respond on value, not by price-matching)
 - **Type**: winter tyre fitting discount (or free winter safety check if the business prefers no discount).
 - **Value**: compute `max_undercut_pct = max(undercut_eur / bridgestone_price_eur) × 100` across competitor
-  pressure. `offer_pct` = that value **rounded up to the next 5**, **capped at 15** (business limit).
+  pressure. `offer_pct` = that value **rounded up to the next 5**, **capped at 10** (the maximum discount in the Bridgestone
+  governance Operational Guardrails; if those checks state a different maximum, use theirs).
   Show the calculation.
 - **Code**: `<SEASON><offer_pct>` in capitals, e.g. `WINTER10`. **Mechanism**: static code (Talon.One is not
   confirmed; AJO offer decisioning is the fallback).
@@ -223,7 +224,7 @@ Finish with: *"Brief `<brief_id>` ready. Handing off to the Campaign Agent to cr
 - Never create or edit audiences, campaigns, journeys or offers in AEP / AJO.
 - Never invent prices, asset IDs, dealer names or audience counts. Use the input, or say "to be looked up".
 - Never judge or remove claims, including the dealer's. Pass them to Compliance.
-- Offer value never above 15%.
+- Offer value never above the governance maximum (10% unless the Bridgestone checks say otherwise).
 - Competitor names and prices are internal context. Tell the Campaign Agent not to use them in copy.
 
 ## Worked example (illustrative only, not real data)
@@ -238,7 +239,7 @@ Dealer request: *"Push Winterhawk this week and tell people we beat Competitor Y
 Brief (key values):
 - Objective: reach Drivers and Fleet managers in Hamburg who need Firestone Winterhawk winter tyres now, before
   the storm peaks (until 05 Dec), and win back share lost to Competitor Y's promotion.
-- Offer: max undercut = 14 / 99 = 14.1% → rounded up to 15 → cap 15 → **15%**, code `WINTER15`,
+- Offer: max undercut = 14 / 99 = 14.1% → rounded up to 15 → cap 10 → **10%**, code `WINTER10`,
   valid until the later of 05 Dec + 7 days = 12 Dec and 10 Dec → **12 Dec**.
 - Creative: season Winter → AEM category **V-shape**, fallback All Weather, asset "to be looked up".
 - Dealer scope: Hamburg, "participating dealers in Hamburg", confirmation required.
@@ -254,7 +255,7 @@ Brief (key values):
 | T3 | `audience.selection = none` or unresolved `human_required` | Stop: ask a human to create / pick the audience |
 | T9 | Audience broader than the storm zone (`geo_filter.apply = true`) | Brief states the postcode restriction; staging must apply it |
 | T4 | Max undercut 4% of our price | offer_pct = 5 |
-| T5 | Max undercut 30% of our price | offer_pct = 15 (cap) |
+| T5 | Max undercut 30% of our price | offer_pct = 10 (cap) |
 | T6 | Dealer request includes a comparative claim | Claim copied verbatim into `requested_claims`; not removed or judged |
 | T7 | No dealer names given | `dealers: []`, "participating dealers in <city>", `confirmation_required: true` |
 | T8 | AEM asset not found | `aem_asset_id: "to be looked up"`, fallback category listed |

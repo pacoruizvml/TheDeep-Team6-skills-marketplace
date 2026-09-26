@@ -35,13 +35,13 @@ and list each failed item with what's needed. If all pass, print one line `Entry
 Use the **most recent brief in this conversation** (JSON with `brief_id`). If there is none, ask for it.
 For a revision, also use the latest **VETO** (constraints) from the Compliance & Safety agent / arbitration loop.
 
-**When called by `teamf-bstn-orchestrator`:** the VETO comes from the `/compliance/mcp` tool
+**When called by `teamf-bstn-orchestrator`:** the VETO comes from the tool
 `submit_campaign_for_review`. Address every constraint it lists, then **return the revised copy** (subject,
 preheader, headline, body, CTA, English translation) plus one line per constraint on how it was addressed. The
 orchestrator resubmits it with the same `reviewId`; you don't submit it yourself or use the arbitration loop.
 Pre-approved wording comes from the **Bridgestone brand checks in the governance brand service**
-(`governance__bga_list_brands` -> brand "Bridgestone" -> `governance__bga_get_checks_by_brand`): the approved
-alternatives and allowed statements in the Claims / Claim Guardrails checks. Fallback: the Team F claims registry.
+(`bga_list_brands` -> brand "Bridgestone" -> `bga_get_checks_by_brand`): the approved
+alternatives and allowed statements in the Claims / Claim Guardrails checks. These tool names may carry a server prefix in your environment (e.g. `governance__bga_list_brands`, `<prefix>__bga_get_checks_by_brand`); match by the tool name, not by the connector or server name. Fallback: the Team F claims registry.
 
 ## Writing a new draft (version 1)
 
@@ -149,7 +149,7 @@ then one JSON block:
 
 ## Worked example (illustrative only, not real data)
 
-Brief: Hamburg storm, Firestone Winterhawk, 15% fitting discount `WINTER15` until 12 Dec, de-DE, segments Drivers /
+Brief: Hamburg storm, Firestone Winterhawk, 10% fitting discount `WINTER10` until 12 Dec, de-DE, segments Drivers /
 Fleet managers, V-shape creative. Dealer requested claim: "we beat Competitor Y on grip".
 
 **v1 (PROPOSE)**, excerpts:
@@ -157,7 +157,7 @@ Fleet managers, V-shape creative. Dealer requested claim: "we beat Competitor Y 
 - Fleet managers subject: "Wintereinbruch in Hamburg: Halten Sie Ihre Flotte in Bewegung"
 - intro: "In Hamburg liegt Schnee, die Straßen sind glatt. …"
 - variant_swap: "Sie fahren noch Sommerreifen? …"
-- offer: "15 % Rabatt auf die Winterreifenmontage mit dem Code WINTER15."  ← terms missing (drafting slip)
+- offer: "10 % Rabatt auf die Winterreifenmontage mit dem Code WINTER10."  ← terms missing (drafting slip)
 - claims_used: "Entwickelt für Traktion im Winter" (brand check), "Besserer Grip als Competitor Y" (dealer_request).
 
 **VETO**: C1 comparative claim without evidence; C2 offer terms missing.

@@ -133,6 +133,13 @@ await call(governance, "record_human_decision", { recordId: wf2.recordId, decisi
 const staged2 = await call(governance, "stage_ajo_journey", { recordId: wf2.recordId });
 assert(!staged2._isError && /STAGED/.test(staged2.journey.status), `Coworker flow → approved → ${staged2.journey?.journeyId} ${staged2.journey?.status}`);
 
+// 6c. Hard offer guardrail: a 15% discount is never passed, even on the scripted 2nd round
+const o1 = await call(compliance, "submit_campaign_for_review", { campaignName: "Offer test", body: "Jetzt 15 % Rabatt auf Winterreifen.", offer: "15% WINTER15" });
+const o2 = await call(compliance, "submit_campaign_for_review", { reviewId: o1.reviewId, body: "Jetzt 15 % Rabatt auf Winterreifen. Nur bei teilnehmenden Händlern. Solange der Vorrat reicht.", offer: "15% WINTER15" });
+assert(o1.decision === "VETO" && o2.decision === "VETO" && o2.constraints.some((c: string) => /10%/.test(c)), "Discount above 10% still vetoed in round 2");
+const o3 = await call(compliance, "submit_campaign_for_review", { reviewId: o1.reviewId, body: "Jetzt 10 % Rabatt auf Winterreifen. Nur bei teilnehmenden Händlern. Solange der Vorrat reicht.", offer: "10% WINTER10" });
+assert(o3.decision === "PASS", "Discount fixed to 10% → PASS in round 3");
+
 // 6. Escalation path (separate campaign, 3 non-compliant versions)
 let esc: any;
 let cid: string | undefined;

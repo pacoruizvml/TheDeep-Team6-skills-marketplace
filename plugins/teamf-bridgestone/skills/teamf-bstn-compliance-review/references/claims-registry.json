@@ -31,8 +31,8 @@
           "de": "Wintertaugliche Reifen zu einem starken Preis"
         },
         {
-          "en": "Save 15% on winter tyre fitting with WINTER15 (valid until [date] at participating dealers)",
-          "de": "15 % Rabatt auf die Winterreifenmontage mit WINTER15 (gültig bis [Datum] bei teilnehmenden Händlern)"
+          "en": "Save 10% on winter tyre fitting with WINTER10 (valid until [date] at participating dealers)",
+          "de": "10 % Rabatt auf die Winterreifenmontage mit WINTER10 (gültig bis [Datum] bei teilnehmenden Händlern)"
         }
       ],
       "prohibited_wording": [
@@ -327,7 +327,7 @@
         "\\d+ ?% (off|Rabatt)",
         "discount",
         "Rabatt",
-        "WINTER15"
+        "WINTER10"
       ],
       "test": "copy states validity date AND participating dealers",
       "on_fail": "VETO",
@@ -336,9 +336,9 @@
     {
       "rule_id": "O-MAX-01",
       "name": "max_discount",
-      "test": "discount_percent <= 15",
+      "test": "discount_percent <= 10",
       "on_fail": "VETO",
-      "constraint": "Maximum discount for reactive campaigns is 15% (PLACEHOLDER business limit)."
+      "constraint": "Maximum discount for reactive campaigns is 10% (matches the Bridgestone governance Operational Guardrails; PLACEHOLDER business limit)."
     }
   ],
   "audience_rules": [
@@ -474,8 +474,8 @@
       "id": "T1",
       "round": 1,
       "product": "Blizzak",
-      "copy_de": "Blizzak Winterreifen – günstiger als Wettbewerber X. Jetzt 15 % Rabatt mit WINTER15.",
-      "copy_en": "Blizzak winter tyres: cheaper than Competitor X. 15% off now with WINTER15.",
+      "copy_de": "Blizzak Winterreifen – günstiger als Wettbewerber X. Jetzt 10 % Rabatt mit WINTER10.",
+      "copy_en": "Blizzak winter tyres: cheaper than Competitor X. 10% off now with WINTER10.",
       "expected": "VETO",
       "expected_constraints": [
         "R-COMP-01 (CL-01 no evidence; EV-03 shows competitor is cheaper)",
@@ -487,8 +487,8 @@
       "id": "T2",
       "round": 2,
       "product": "Blizzak",
-      "copy_de": "Blizzak – entwickelt für Traktion im Winter. 15 % Rabatt auf die Winterreifenmontage mit WINTER15 (gültig bis 30.11. bei teilnehmenden Händlern).",
-      "copy_en": "Blizzak: engineered for winter traction. 15% off winter tyre fitting with WINTER15 (valid until 30 Nov at participating dealers).",
+      "copy_de": "Blizzak – entwickelt für Traktion im Winter. 10 % Rabatt auf die Winterreifenmontage mit WINTER10 (gültig bis 30.11. bei teilnehmenden Händlern).",
+      "copy_en": "Blizzak: engineered for winter traction. 10% off winter tyre fitting with WINTER10 (valid until 30 Nov at participating dealers).",
       "expected": "PASS",
       "why": "Campaign Agent rewrite using allowed_wording; terms stated"
     },

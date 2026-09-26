@@ -83,7 +83,7 @@ Load the envelope from Business Context if configured; otherwise use these defau
 | **Audience** | Only **existing, approved** dealer-area audiences (find them; never create or edit audiences) |
 | **Consent** | Email audiences must require `marketingConsent = true` AND `emailOptIn = true` |
 | **Channel** | Email only |
-| **Offer ceiling** | Discount **≤ 15%**; duration **≤ 14 days**; terms must state validity date and "at <dealer name>" |
+| **Offer ceiling** | Discount **≤ 10%**; duration **≤ 14 days**; terms must state validity date and "at <dealer name>" |
 | **Products** | Products the dealer sells, matching the season (winter claims only for Winter / All-Season products) |
 | **Wording** | **Claim-cleared wording only**: approved alternatives in the Bridgestone brand checks (governance brand service; fallback: Team F claims registry) and pre-approved templates. **No free-text claims** |
 | **Frequency** | Max one active self-serve promo per dealer at a time |
@@ -93,7 +93,7 @@ Load the envelope from Business Context if configured; otherwise use these defau
 2. **Check every guardrail.** For each one, record `pass` or `refuse`, with the reason.
 3. **If anything is outside the envelope, refuse that part**, clearly and helpfully:
    - say what isn't allowed and why (one line each),
-   - offer the **closest allowed alternative** (e.g. "15% is the maximum; shall I use 15%?"; "I can only reach
+   - offer the **closest allowed alternative** (e.g. "10% is the maximum; shall I use 10%?"; "I can only reach
      customers in your area"; "I can't use 'cheaper than Competitor…', but I can use 'Winter-ready tyres at a great price'"),
    - offer to **escalate to the marketing team** for anything that needs a custom claim or a larger scope.
    Never quietly change the request. Get the dealer's OK on every substitution.
@@ -148,10 +148,10 @@ Dealer: "Reifen Nord, Hamburg 20095" (DLR-DE-HAM-003).
 **Mode B request:** *"Send a 25% off winter fitting deal to all drivers in northern Germany this month and say
 we're the cheapest in town."*
 - Geo: "northern Germany" → **refuse** (own area only); alternative: Hamburg 20095 customers.
-- Offer: 25% → **refuse** (max 15%); alternative: 15%. Duration "this month" → **refuse** (max 14 days); alternative: 14 days.
+- Offer: 25% → **refuse** (max 10%); alternative: 10%. Duration "this month" → **refuse** (max 14 days); alternative: 14 days.
 - Wording: "cheapest in town" → **refuse** (comparative / superiority claim, not claim-cleared); alternative:
   "Winter-ready tyres at a great price".
-- Status `REFUSED`, alternatives offered. Dealer: *"OK, do 15% for two weeks in Hamburg with your wording."*
+- Status `REFUSED`, alternatives offered. Dealer: *"OK, do 10% for two weeks in Hamburg with your wording."*
 - Re-check: all pass → preview → dealer confirms → AJO draft staged → OPEN_GATE (pre-approved-dealer-envelope) →
   status `CONFIRMED_STAGED`.
 
@@ -160,7 +160,7 @@ we're the cheapest in town."*
 | Case | Request | Expected |
 |---|---|---|
 | T1 | 10% for 7 days, own postcode, approved brand wording | Preview → confirm → staged + gate |
-| T2 | 20% discount | Refuse; offer 15% |
+| T2 | 20% discount | Refuse; offer 10% |
 | T3 | Another city / nationwide | Refuse; offer own area |
 | T4 | Free-text claim ("best grip") | Refuse; offer claim-cleared wording or escalate to marketing |
 | T5 | Dealer can't be identified | Ask; if unconfirmed, refuse self-serve |

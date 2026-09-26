@@ -1,8 +1,8 @@
 ---
 name: teamf-bstn-trigger-detect
 description: >
-  [Team F · Bridgestone Demo 1 · v2] Fetches the weather and competitor pricing feeds by calling the Team F
-  Signal-to-Audience MCP tool `get_external_signals` (/signal/mcp), applies the storm and competitor-undercut
+  [Team F · Bridgestone Demo 1 · v2] Fetches the weather and competitor pricing feeds by calling the tool
+  `get_external_signals`, applies the storm and competitor-undercut
   thresholds, emits a structured trigger object (affected postal codes, season, products under pressure), selects
   the best EXISTING audience in AEP (configurable scoring, with a geo filter when the audience is broader), and
   returns that audience's name and ID for the next step. Use when a user asks "is there an opportunity",
@@ -30,7 +30,7 @@ FAILED: teamf-bstn-trigger-detect` and list each failed item with what's needed.
 `Entry check passed` and continue.
 
 1. **A signal source exists:** either both feeds are already in this conversation (pasted, or fetched by
-   `teamf-bstn-orchestrator`), or the Signal-to-Audience tool `get_external_signals` is available.
+   `teamf-bstn-orchestrator`), or a tool named `get_external_signals` is available (from any connected server).
 2. **After Step 0, the feeds are usable:** `weather_feed.records[]` and `competitor_pricing_feed.records[]` are
    both present and non-empty, and each record has the fields the rules use (`snowProbability`, `validFrom` /
    `validUntil`, `postalCode`, `city`, `country`; `new_price_eur`, `bridgestone_price_eur`, `market`, `regions`,
@@ -41,16 +41,15 @@ FAILED: teamf-bstn-trigger-detect` and list each failed item with what's needed.
 
 ## Step 0 · Fetch the signals (always first)
 
-Call the tool **`get_external_signals`** with `feed: "all"` on the **Team F Signal-to-Audience** connector
-(endpoint `/signal/mcp`). It returns `weather_feed` and `competitor_pricing_feed` in one response. Use that
+Call the tool **`get_external_signals`** with `feed: "all"`. **Tool resolution:** find tools by their **tool name** (e.g. `submit_campaign_for_review`), not by connector name, server name or endpoint. Connector labels and tool prefixes differ per environment (a tool may appear as `submit_campaign_for_review` or as `<any_prefix>__submit_campaign_for_review` / `<any prefix>.submit_campaign_for_review`); any connected tool whose name ends with the exact tool name counts. If no connected tool has that name, report the missing **tool name** and stop. It returns `weather_feed` and `competitor_pricing_feed` in one response. Use that
 response as the input below.
 
 - Call it once per run, before anything else. Don't ask the user to paste the feeds first.
-- If the tool errors or the connector isn't available, report the exact error and stop. Don't invent or reuse
+- If the tool errors or no tool with that name is available, report the exact error and stop. Don't invent or reuse
   signal values from earlier in the conversation. Offer the user the option to paste the feed JSON instead.
 - If the feeds are already in this conversation (pasted by the user, or fetched by `teamf-bstn-orchestrator` in
   its step 1), use those and skip the call.
-- Use only `get_external_signals` from that connector for this skill. Don't call `get_weather_alerts`,
+- Use only `get_external_signals` for this skill, even if the same server offers other tools. Don't call `get_weather_alerts`,
   `get_business_signals` or `evaluate_opportunity` (they read a different dataset), and never call
   `build_audience` (it creates an audience).
 

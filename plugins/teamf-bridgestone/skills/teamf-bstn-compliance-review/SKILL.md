@@ -40,10 +40,12 @@ A draft contains: `copy_version`, `language`, `subject`, `body` (plus English re
 **Rules source: the Bridgestone guardrails in the governance brand service.** They are **not** a pasted file and
 not in general Business Context. Resolve them at the start of **every** review, in this order:
 
-1. Call **`governance__bga_list_brands`**, find the brand named **"Bridgestone"**, and take its `id`.
-2. Call **`governance__bga_get_checks_by_brand`** with that id. Each check has `id`, `title`, `prompt`, `category`
+Match these tools by tool name: they may carry a server prefix in your environment (e.g. `governance__bga_list_brands`); the connector or server name doesn't matter.
+
+1. Call **`bga_list_brands`**, find the brand named **"Bridgestone"**, and take its `id`.
+2. Call **`bga_get_checks_by_brand`** with that id. Each check has `id`, `title`, `prompt`, `category`
    (e.g. Claims / Claim Guardrails / Operational Guardrails / Tone / Brand Identity / Writing Style) and `applicable_to`.
-3. Call **`governance__bga_get_segments`** for the brand, and apply any segment-scoped rules that match the campaign's
+3. Call **`bga_get_segments`** for the brand, and apply any segment-scoped rules that match the campaign's
    segments (e.g. B2B fleet -> Fleet managers; B2C retail -> Drivers).
 4. **Only if the governance service is unavailable** for the tenant, use the Team F claims registry instead: the
    bundled `references/claims-registry.json` (when installed from the Team F marketplace), or ask the user to paste
@@ -136,8 +138,8 @@ below apply only when running without it.
 When a round ends in `PASS`, the campaign is ready for a human. Create **one Workfront task** using the
 Workfront tools:
 
-- **Project**: the team's reactive-campaign project (e.g. "Bridgestone Reactive Campaigns"). If you can't
-  find it, ask which project to use; don't create a project yourself.
+- **Project**: **default "TeamF – Bridgestone Reactive Campaigns"**, used without asking unless the user names another project in this
+  conversation. If it can't be found, say so and ask which project to use; don't create a project yourself.
 - **Task name**: `Approve campaign: <campaign / brief name> (<trigger_id>)`
 - **Assignee**: the configured campaign approver (role or person given in Business Context / by the user).
   Assigning the task notifies them. If no approver is configured, ask who it should be; never guess a person.
@@ -191,16 +193,16 @@ Never do it here.
 
 ## Worked example (illustrative only, not real data)
 
-Brief: Hamburg storm, Firestone Winterhawk, offer 15% `WINTER15`, email, de-DE. Dealer requested claim:
+Brief: Hamburg storm, Firestone Winterhawk, offer 10% `WINTER10`, email, de-DE. Dealer requested claim:
 "we beat Competitor Y on grip". Evidence: no grip test on file.
 
-- **Round 1**: draft says "Winterhawk – besserer Grip als Competitor Y. 15 % Rabatt mit WINTER15."
+- **Round 1**: draft says "Winterhawk – besserer Grip als Competitor Y. 10 % Rabatt mit WINTER10."
   - "besserer Grip als Competitor Y" → comparative performance, no evidence → **blocked** (rule_id: "Bridgestone Comparative Claims (<check id>)").
     Constraint: remove the competitor comparison or cite a verifiable test; descriptive wording from the brand checks allowed.
   - Offer: no validity date / "participating dealers" → **fail** (Operational Guardrails offer-terms check). Constraint: add both.
   - Decision **VETO**; audit entry logged; back to the Campaign Agent.
-- **Round 2**: draft says "Winterhawk – entwickelt für Traktion im Winter. 15 % Rabatt auf die Montage mit
-  WINTER15, gültig bis 12.12. bei teilnehmenden Händlern."
+- **Round 2**: draft says "Winterhawk – entwickelt für Traktion im Winter. 10 % Rabatt auf die Montage mit
+  WINTER10, gültig bis 12.12. bei teilnehmenden Händlern."
   - All claims approved; offer, audience, language pass → **PASS**; audit entry logged.
   - Workfront task "Approve campaign: Hamburg Winter Storm – Firestone Winterhawk (T-DE-20095-20261203)"
     assigned to the configured approver, due in 2 h, approval package attached. Audit: SENT_FOR_APPROVAL.
@@ -217,7 +219,7 @@ Brief: Hamburg storm, Firestone Winterhawk, offer 15% `WINTER15`, email, de-DE. 
 | T6 | Offer 25% | VETO (max discount) |
 | T7 | Audience missing emailOptIn | VETO (consent rule) |
 | T8 | Governance brand service unavailable, no registry pasted | Stop: "no guardrails resolved" |
-| T11 | Governance service available | Checks resolved via `governance__bga_list_brands` -> `governance__bga_get_checks_by_brand`; findings cite check title + id |
+| T11 | Governance service available | Checks resolved via `bga_list_brands` -> `bga_get_checks_by_brand` (any prefix); findings cite check title + id |
 | T12 | Governance unavailable, registry pasted | Review runs on the registry; `rules_source` says fallback |
 | T9 | Workfront not connected, round passes | Approval package output as "APPROVAL REQUIRED (Workfront unavailable)", fallback_log |
 | T10 | No approver configured | Ask who approves; don't create an unassigned task |
